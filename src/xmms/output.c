@@ -526,6 +526,18 @@ xmms_output_filler (void *arg)
 }
 
 gint
+output_is_ready_for_period(xmms_output_t *output, gint len)
+{
+
+  if (xmms_ringbuf_bytes_used(output->filler_buffer) >= len) {
+    return 0;
+  } else {
+    return -1;
+  }
+
+}
+
+gint
 xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 {
 	gint ret;

@@ -311,6 +311,16 @@ void xmms_output_stream_type_add (xmms_output_t *output, ...);
 gint xmms_output_read (xmms_output_t *output, char *buffer, gint len);
 
 /**
+ * determine there is enough data in the ringbuffer to fill out a peroid
+ *
+ * @param output an output object
+ * @param len the number of bytes to read
+ * @return 0 yes, -1 no
+ */
+
+gint output_is_ready_for_period (xmms_output_t *output, gint len);
+
+/**
  * Set an error.
  *
  * When an error occurs in an asynchronous function, the error can be

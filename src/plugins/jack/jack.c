@@ -81,6 +81,9 @@ xmms_jack_plugin_setup (xmms_output_plugin_t *plugin)
 
 	xmms_output_plugin_methods_set (plugin, &methods);
 
+	xmms_output_plugin_config_property_register (plugin, "clientname", "XMMS2",
+	                                             NULL, NULL);
+
 	jack_set_error_function (xmms_jack_error);
 
 	return TRUE;
@@ -97,7 +100,13 @@ xmms_jack_connect (xmms_output_t *output, xmms_jack_data_t *data)
 {
 	int i;
 
-	data->jack = jack_client_new ("XMMS2");
+	const xmms_config_property_t *cv;
+	const gchar *clientname;
+
+	cv = xmms_output_config_lookup (output, "clientname");
+	clientname = xmms_config_property_get_string (cv);
+
+	data->jack = jack_client_open (clientname, JackNullOption, NULL);
 	if (!data->jack) {
 		return FALSE;
 	}
@@ -146,6 +155,8 @@ xmms_jack_new (xmms_output_t *output)
 	                        jack_get_sample_rate (data->jack));
 
 	/* we should connect the ports here? */
+	
+	xmms_log_info ("Started Patched xmms2 jack output");
 
 	return TRUE;
 }
@@ -266,7 +277,12 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 			t = MIN (toread * CHANNELS * sizeof (xmms_samplefloat_t),
 			         sizeof (tbuf));
 
-			res = xmms_output_read (output, (gchar *)tbuf, t);
+			if (output_is_ready_for_period(output, t) == 0) {
+				res = xmms_output_read (output, (gchar *)tbuf, t);
+			} else {
+				/* xmms_log_info ("Not Enough Bits in the Ring Buffer, its going to be a silent period..."); */
+				break;
+			}
 
 			if (res <= 0) {
 				XMMS_DBG ("output_read returned %d", res);

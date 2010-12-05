@@ -237,6 +237,9 @@ xmms_curl_init (xmms_xform_t *xform)
 
 	data->curl_easy = curl_easy_init ();
 
+		XMMS_DBG ("did set buffersize");
+
+	curl_easy_setopt (data->curl_easy, CURLOPT_BUFFERSIZE, 600);
 	curl_easy_setopt (data->curl_easy, CURLOPT_URL, data->url);
 	curl_easy_setopt (data->curl_easy, CURLOPT_HEADER, 0);
 	curl_easy_setopt (data->curl_easy, CURLOPT_HTTPGET, 1);
@@ -377,7 +380,7 @@ fill_buffer (xmms_xform_t *xform, xmms_curl_data_t *data, xmms_error_t *error)
 					                curlmsg->data.result,
 					                curl_easy_strerror (curlmsg->data.result));
 				} else {
-					XMMS_DBG ("Curl fill_buffer returned unknown message (%d)", curlmsg->msg);
+					XMMS_DBG ("Curl fill_buffer returned unknown message (%s)", curl_easy_strerror (curlmsg->msg));
 				}
 			} while (messages > 0);
 
@@ -397,7 +400,7 @@ xmms_curl_read (xmms_xform_t *xform, void *buffer, gint len,
 {
 	xmms_curl_data_t *data;
 	gint ret;
-
+					//XMMS_DBG ("curl read was called and len was %d", len);
 	g_return_val_if_fail (xform, -1);
 	g_return_val_if_fail (buffer, -1);
 	g_return_val_if_fail (error, -1);
@@ -413,6 +416,7 @@ xmms_curl_read (xmms_xform_t *xform, void *buffer, gint len,
 		/* if we have data available, just pick it up (even if there's
 		   less bytes available than was requested) */
 		if (data->bufferlen) {
+					//XMMS_DBG ("it was less but thats ok right");
 			len = MIN (len, data->bufferlen);
 			memcpy (buffer, data->buffer, len);
 			data->bufferlen -= len;
@@ -421,7 +425,7 @@ xmms_curl_read (xmms_xform_t *xform, void *buffer, gint len,
 			}
 			return len;
 		}
-
+					//XMMS_DBG ("Fill buffer thang");
 		ret = fill_buffer (xform, data, error);
 
 		if (ret == 0 || ret == -1) {
@@ -461,7 +465,7 @@ xmms_curl_callback_write (void *ptr, size_t size, size_t nmemb, void *stream)
 
 	len = size * nmemb;
 
-	g_return_val_if_fail ((data->bufferlen + len) <= CURL_MAX_WRITE_SIZE, 0);
+	//g_return_val_if_fail ((data->bufferlen + len) <= CURL_MAX_WRITE_SIZE, 0);
 
 	memcpy (data->buffer + data->bufferlen, ptr, len);
 	data->bufferlen = data->bufferlen + len;
