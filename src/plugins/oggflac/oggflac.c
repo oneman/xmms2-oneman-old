@@ -577,12 +577,27 @@ xmms_oggflac_read (xmms_xform_t *xform, xmms_sample_t *buf, gint len,
 	if (size <= 0) {
 		ret = FLAC__stream_decoder_process_single (data->flacdecoder);
 	} else {
-    		XMMS_DBG ("FLAC wanted to read but didn't");
+    		//XMMS_DBG ("FLAC wanted to read but didn't");
   }
 
 	state = FLAC__stream_decoder_get_state (data->flacdecoder);
 
 	if (state == FLAC__STREAM_DECODER_END_OF_STREAM) {
+		return 0;
+	}
+
+	if (state == FLAC__STREAM_DECODER_OGG_ERROR) {
+    		XMMS_DBG ("fuckup ogg error");
+		return 0;
+	}
+
+	if (state == FLAC__STREAM_DECODER_ABORTED) {
+    		XMMS_DBG ("fuckup aborted error");
+		return 0;
+	}
+
+	if (state == FLAC__STREAM_DECODER_MEMORY_ALLOCATION_ERROR) {
+    		XMMS_DBG ("fucking mem error");
 		return 0;
 	}
 
