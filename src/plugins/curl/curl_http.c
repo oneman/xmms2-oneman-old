@@ -214,7 +214,7 @@ xmms_curl_init (xmms_xform_t *xform)
 	g_snprintf (proxyuserpass, sizeof (proxyuserpass), "%s:%s", proxyuser,
 	            proxypass);
 
-	data->buffer = g_malloc (CURL_MAX_WRITE_SIZE);
+	data->buffer = g_malloc (CURL_MAX_WRITE_SIZE * 16);
 	data->url = g_strdup (url);
 
 	/* check for broken version of curl here */
@@ -400,7 +400,7 @@ xmms_curl_read (xmms_xform_t *xform, void *buffer, gint len,
 {
 	xmms_curl_data_t *data;
 	gint ret;
-					//XMMS_DBG ("curl read was called and len was %d", len);
+					XMMS_DBG ("curl read was called and len was %d", len);
 	g_return_val_if_fail (xform, -1);
 	g_return_val_if_fail (buffer, -1);
 	g_return_val_if_fail (error, -1);
