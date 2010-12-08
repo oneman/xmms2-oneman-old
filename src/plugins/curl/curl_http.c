@@ -214,7 +214,7 @@ xmms_curl_init (xmms_xform_t *xform)
 	g_snprintf (proxyuserpass, sizeof (proxyuserpass), "%s:%s", proxyuser,
 	            proxypass);
 
-	data->buffer = g_malloc (CURL_MAX_WRITE_SIZE * 16);
+	data->buffer = g_malloc (CURL_MAX_WRITE_SIZE * 96);
 	data->url = g_strdup (url);
 
 	/* check for broken version of curl here */
@@ -239,7 +239,7 @@ xmms_curl_init (xmms_xform_t *xform)
 
 		XMMS_DBG ("did set buffersize");
 
-	curl_easy_setopt (data->curl_easy, CURLOPT_BUFFERSIZE, 600);
+	curl_easy_setopt (data->curl_easy, CURLOPT_BUFFERSIZE, CURL_MAX_WRITE_SIZE);
 	curl_easy_setopt (data->curl_easy, CURLOPT_URL, data->url);
 	curl_easy_setopt (data->curl_easy, CURLOPT_HEADER, 0);
 	curl_easy_setopt (data->curl_easy, CURLOPT_HTTPGET, 1);
@@ -314,6 +314,21 @@ xmms_curl_init (xmms_xform_t *xform)
 		                             XMMS_STREAM_TYPE_END);
 	}
 
+  
+
+ 		XMMS_DBG ("Buffering for three seconds mmmk");
+     int i, k;
+     for(k=0;k<3;k++)    {
+     for(i=0;i<15;i++)    {
+
+				fill_buffer (xform, data, &error);
+	   }
+       sleep(1);
+		   if(k == 0) { XMMS_DBG ("one ..."); }
+		   if(k == 1) { XMMS_DBG ("two (getting closer)......"); }
+		   if(k == 2) { XMMS_DBG ("threeeeeeeeeeeeee ..."); }
+     }
+
 	return TRUE;
 }
 
@@ -356,6 +371,12 @@ fill_buffer (xmms_xform_t *xform, xmms_curl_data_t *data, xmms_error_t *error)
 
 		data->curl_code = curl_multi_perform (data->curl_multi, &handles);
 
+    //XMMS_DBG ("Fill Buffer Called and curl says: %s !", curl_multi_strerror (data->curl_code));
+
+		if (data->curl_code == CURLM_CALL_MULTI_PERFORM) { 
+    	XMMS_DBG ("it really was multi perform!!!");
+    }
+
 		if (data->curl_code != CURLM_CALL_MULTI_PERFORM &&
 		    data->curl_code != CURLM_OK) {
 
@@ -389,6 +410,7 @@ fill_buffer (xmms_xform_t *xform, xmms_curl_data_t *data, xmms_error_t *error)
 		}
 
 		if (data->bufferlen > 0) {
+      //XMMS_DBG ("hi. My buffer is now %d bytes", data->bufferlen);
 			return 1;
 		}
 	}
@@ -410,7 +432,7 @@ xmms_curl_read (xmms_xform_t *xform, void *buffer, gint len,
 
 	if (data->done)
 		return 0;
-
+  //XMMS_DBG ("read was called and requested %d bytes", len);
 	while (TRUE) {
 
 		/* if we have data available, just pick it up (even if there's
@@ -425,7 +447,16 @@ xmms_curl_read (xmms_xform_t *xform, void *buffer, gint len,
 			}
 			return len;
 		}
-					//XMMS_DBG ("Fill buffer thang");
+
+    int i;
+  
+     for(i=0;i<44;i++)    {
+
+				fill_buffer (xform, data, error);
+	   }
+
+
+		XMMS_DBG ("Buffer size in bytes: %d", data->bufferlen);
 		ret = fill_buffer (xform, data, error);
 
 		if (ret == 0 || ret == -1) {
@@ -464,7 +495,7 @@ xmms_curl_callback_write (void *ptr, size_t size, size_t nmemb, void *stream)
 	g_return_val_if_fail (data, 0);
 
 	len = size * nmemb;
-
+  //XMMS_DBG("curl write callback was called and got in %d bytes", len);
 	//g_return_val_if_fail ((data->bufferlen + len) <= CURL_MAX_WRITE_SIZE, 0);
 
 	memcpy (data->buffer + data->bufferlen, ptr, len);
