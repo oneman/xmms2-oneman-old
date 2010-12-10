@@ -55,7 +55,16 @@ typedef struct {
 	xmms_error_t status;
 
 	gboolean broken_version;
+	GThread *filler_thread;
+	GMutex *filler_mutex;
+  int kill_input_thread;
 } xmms_curl_data_t;
+
+typedef struct {
+	xmms_xform_t *xform;
+	xmms_curl_data_t *data;
+  xmms_error_t *error;
+} xmms_curl_buffer_thread_monkey;
 
 typedef void (*handler_func_t) (xmms_xform_t *xform, gchar *header);
 
@@ -86,6 +95,7 @@ handler_t handlers[] = {
 static gboolean xmms_curl_plugin_setup (xmms_xform_plugin_t *xform_plugin);
 static gboolean xmms_curl_init (xmms_xform_t *xform);
 static void xmms_curl_destroy (xmms_xform_t *xform);
+static void *curl_input_filler(void *arg);
 static gint fill_buffer (xmms_xform_t *xform, xmms_curl_data_t *data, xmms_error_t *error);
 static gint xmms_curl_read (xmms_xform_t *xform, void *buffer, gint len, xmms_error_t *error);
 /* static gint64 xmms_curl_seek (xmms_xform_t *xform, gint64 offset, xmms_xform_seek_mode_t whence, xmms_error_t *error); */
@@ -214,7 +224,7 @@ xmms_curl_init (xmms_xform_t *xform)
 	g_snprintf (proxyuserpass, sizeof (proxyuserpass), "%s:%s", proxyuser,
 	            proxypass);
 
-	data->buffer = g_malloc (CURL_MAX_WRITE_SIZE * 96);
+	data->buffer = g_malloc (CURL_MAX_WRITE_SIZE * 396);
 	data->url = g_strdup (url);
 
 	/* check for broken version of curl here */
@@ -291,6 +301,9 @@ xmms_curl_init (xmms_xform_t *xform)
 
 	xmms_xform_private_data_set (xform, data);
 
+	data->filler_mutex = g_mutex_new ();
+	data->kill_input_thread = 0;
+
 	/* perform initial fill to see if it contains shoutcast metadata or not */
 	if (fill_buffer (xform, data, &error) <= 0) {
 		/* something went wrong */
@@ -314,22 +327,47 @@ xmms_curl_init (xmms_xform_t *xform)
 		                             XMMS_STREAM_TYPE_END);
 	}
 
-  
+  //sleep(1);
+  //xmms_curl_buffer_thread_monkey *important_info;
+
+  //important_info->xform = xform;
+  //important_info->data = data;
+  //important_info->error = &error;
+  data->filler_thread = g_thread_create (curl_input_filler, xform, TRUE, NULL);
 
  		XMMS_DBG ("Buffering for three seconds mmmk");
      int i, k;
-     for(k=0;k<3;k++)    {
+     for(k=0;k<2;k++)    {
      for(i=0;i<15;i++)    {
 
-				fill_buffer (xform, data, &error);
+				//fill_buffer (xform, data, &error);
 	   }
        sleep(1);
-		   if(k == 0) { XMMS_DBG ("one ..."); }
-		   if(k == 1) { XMMS_DBG ("two (getting closer)......"); }
-		   if(k == 2) { XMMS_DBG ("threeeeeeeeeeeeee ..."); }
+		   //if(k == 0) { XMMS_DBG ("one ..."); }
+		   //if(k == 1) { XMMS_DBG ("two (getting closer)......"); }
+		   //if(k == 2) { XMMS_DBG ("threeeeeeeeeeeeee ..."); }
      }
 
 	return TRUE;
+}
+
+static void *
+curl_input_filler(void *arg) {
+ 		XMMS_DBG ("hello from input filler thread");
+	xmms_xform_t *xform = (xmms_xform_t *)arg;
+	xmms_curl_data_t *data;
+  	data = xmms_xform_private_data_get (xform);
+	xmms_error_t error;
+  int i;
+  while(data->kill_input_thread != 1) {
+    for(i=0;i<35;i++)    {
+    	fill_buffer(xform, data, &error); 
+    }
+    i = 0;
+    //sleep(1);
+  }
+ 		XMMS_DBG ("input filler thread is now dead");
+  	return NULL;
 }
 
 static gint
@@ -408,11 +446,13 @@ fill_buffer (xmms_xform_t *xform, xmms_curl_data_t *data, xmms_error_t *error)
 			data->done = TRUE;
 			return 0;
 		}
-
+    g_mutex_lock (data->filler_mutex);
 		if (data->bufferlen > 0) {
+      g_mutex_unlock (data->filler_mutex);
       //XMMS_DBG ("hi. My buffer is now %d bytes", data->bufferlen);
 			return 1;
 		}
+    g_mutex_unlock (data->filler_mutex);
 	}
 }
 
@@ -432,11 +472,12 @@ xmms_curl_read (xmms_xform_t *xform, void *buffer, gint len,
 
 	if (data->done)
 		return 0;
-  //XMMS_DBG ("read was called and requested %d bytes", len);
+  XMMS_DBG ("read was called and requested %d bytes", len);
 	while (TRUE) {
 
 		/* if we have data available, just pick it up (even if there's
 		   less bytes available than was requested) */
+	  g_mutex_lock (data->filler_mutex);
 		if (data->bufferlen) {
 					//XMMS_DBG ("it was less but thats ok right");
 			len = MIN (len, data->bufferlen);
@@ -445,20 +486,21 @@ xmms_curl_read (xmms_xform_t *xform, void *buffer, gint len,
 			if (data->bufferlen) {
 				memmove (data->buffer, data->buffer + len, data->bufferlen);
 			}
+	    g_mutex_unlock (data->filler_mutex);
 			return len;
 		}
-
-    int i;
+	    g_mutex_unlock (data->filler_mutex);
+/*    int i;
   
      for(i=0;i<44;i++)    {
 
 				fill_buffer (xform, data, error);
 	   }
 
-
-		XMMS_DBG ("Buffer size in bytes: %d", data->bufferlen);
-		ret = fill_buffer (xform, data, error);
-
+*/
+		XMMS_DBG ("Got to a bad place");
+	//	ret = fill_buffer (xform, data, error);
+ret = 0;
 		if (ret == 0 || ret == -1) {
 			return ret;
 		}
@@ -469,12 +511,12 @@ static void
 xmms_curl_destroy (xmms_xform_t *xform)
 {
 	xmms_curl_data_t *data;
-
 	g_return_if_fail (xform);
 
 	data = xmms_xform_private_data_get (xform);
 	g_return_if_fail (data);
-
+  data->kill_input_thread = 1;
+	g_thread_join (data->filler_thread);
 	xmms_curl_free_data (data);
 }
 
@@ -495,11 +537,14 @@ xmms_curl_callback_write (void *ptr, size_t size, size_t nmemb, void *stream)
 	g_return_val_if_fail (data, 0);
 
 	len = size * nmemb;
-  //XMMS_DBG("curl write callback was called and got in %d bytes", len);
+  XMMS_DBG("curl write callback was called and got in %d bytes", len);
 	//g_return_val_if_fail ((data->bufferlen + len) <= CURL_MAX_WRITE_SIZE, 0);
 
+	g_mutex_lock (data->filler_mutex);
+  XMMS_DBG("hi me");
 	memcpy (data->buffer + data->bufferlen, ptr, len);
 	data->bufferlen = data->bufferlen + len;
+	g_mutex_unlock (data->filler_mutex);
 
 	return len;
 }
@@ -617,7 +662,7 @@ xmms_curl_free_data (xmms_curl_data_t *data)
 	curl_slist_free_all (data->http_req_headers);
 
 	g_free (data->buffer);
-
+	g_mutex_free (data->filler_mutex);
 	g_free (data->url);
 	g_free (data);
 }
