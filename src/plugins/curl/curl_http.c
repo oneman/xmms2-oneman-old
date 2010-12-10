@@ -366,7 +366,7 @@ curl_input_filler(void *arg)
 	xmms_error_t error;	// its a lie!
 	int c;
 	if (data->stream == 0) {
-		g_usleep(50000);
+		g_usleep(200000);
 	} else {
 		XMMS_DBG ("Buffering stream for %d seconds...", data->buffer_seconds);
 		g_usleep(data->buffer_seconds * 1000000);
@@ -382,7 +382,19 @@ curl_input_filler(void *arg)
 					return NULL;
 			}
 		}
-
+		if (data->stream == 1){
+			g_mutex_unlock (data->filler_has_some_data_mutex);
+		}
+		int buffersize = 0;
+		g_mutex_lock (data->filler_mutex);
+		buffersize = data->bufferlen;
+		g_mutex_unlock (data->filler_mutex);
+		if(buffersize > 1000000) {
+					g_usleep(3000000); /* over a meg of input buffer? yawn.. lets sleep on it */
+		}
+		if(buffersize > 1000000) {
+					g_usleep(3000000); /* over a meg of input buffer? yawn.. lets sleep on it */
+		}
 		if(data->verbose == 1) {
 			g_mutex_lock (data->filler_mutex);
 			XMMS_DBG ("Curl input buffer is %d bytes at this time", data->bufferlen);
@@ -470,7 +482,7 @@ fill_buffer (xmms_xform_t *xform, xmms_curl_data_t *data, xmms_error_t *error)
 			return 0;
 		}
 		g_mutex_lock (data->filler_mutex);
-		if (data->bufferlen > 64000) {
+		if ((data->bufferlen > 96000) && (data->stream == 0)){
 				g_mutex_unlock (data->filler_has_some_data_mutex);
 		}
 		if (data->bufferlen > 0) {
