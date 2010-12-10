@@ -60,12 +60,6 @@ typedef struct {
   int kill_input_thread;
 } xmms_curl_data_t;
 
-typedef struct {
-	xmms_xform_t *xform;
-	xmms_curl_data_t *data;
-  xmms_error_t *error;
-} xmms_curl_buffer_thread_monkey;
-
 typedef void (*handler_func_t) (xmms_xform_t *xform, gchar *header);
 
 static void header_handler_contentlength (xmms_xform_t *xform, gchar *header);
@@ -325,7 +319,7 @@ xmms_curl_init (xmms_xform_t *xform)
 		                             XMMS_STREAM_TYPE_END);
 	}
 
-  data->filler_thread = g_thread_create (curl_input_filler, xform, TRUE, NULL);
+	data->filler_thread = g_thread_create (curl_input_filler, xform, TRUE, NULL);
 
 	XMMS_DBG ("Buffering for three seconds...");
 	sleep(3);
@@ -336,7 +330,8 @@ static void *
 curl_input_filler(void *arg)
 {
 	/* this needs to be smarter in a few ways.
-		 1) check to make sure we dont overflow buffer
+		 1) better check to make sure we dont overflow buffer
+			1a) there is such a check in fill_buffer kind of
 		 2) sometimes just nap instead
 		 3) I forgot
   */
@@ -427,11 +422,16 @@ fill_buffer (xmms_xform_t *xform, xmms_curl_data_t *data, xmms_error_t *error)
 			return 0;
 		}
 		g_mutex_lock (data->filler_mutex);
+		/* maybe not the best place for this */
+		if (data->bufferlen > ((CURL_MAX_WRITE_SIZE * 500) - (CURL_MAX_WRITE_SIZE * 100))) {
+			/* nor the best way to handle the situation */
+			sleep(1);
+		}
 		if (data->bufferlen > 0) {
 			g_mutex_unlock (data->filler_mutex);
 			return 1;
 		}
-    g_mutex_unlock (data->filler_mutex);
+		g_mutex_unlock (data->filler_mutex);
 	}
 }
 
@@ -455,7 +455,7 @@ xmms_curl_read (xmms_xform_t *xform, void *buffer, gint len,
 
 		/* if we have data available, just pick it up (even if there's
 		   less bytes available than was requested) */
-	  g_mutex_lock (data->filler_mutex);
+		g_mutex_lock (data->filler_mutex);
 		if (data->bufferlen) {
 			len = MIN (len, data->bufferlen);
 			memcpy (buffer, data->buffer, len);
@@ -463,10 +463,10 @@ xmms_curl_read (xmms_xform_t *xform, void *buffer, gint len,
 			if (data->bufferlen) {
 				memmove (data->buffer, data->buffer + len, data->bufferlen);
 			}
-	    g_mutex_unlock (data->filler_mutex);
+			g_mutex_unlock (data->filler_mutex);
 			return len;
 		}
-	    g_mutex_unlock (data->filler_mutex);
+		g_mutex_unlock (data->filler_mutex);
 
 		XMMS_DBG ("Got to a bad place, it seems we have run out of data from where ever curl was getting it from!");
 		return 0;
@@ -481,7 +481,7 @@ xmms_curl_destroy (xmms_xform_t *xform)
 
 	data = xmms_xform_private_data_get (xform);
 	g_return_if_fail (data);
-  data->kill_input_thread = 1;
+	data->kill_input_thread = 1;
 	g_thread_join (data->filler_thread);
 	xmms_curl_free_data (data);
 }
