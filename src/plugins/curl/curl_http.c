@@ -422,9 +422,16 @@ fill_buffer (xmms_xform_t *xform, xmms_curl_data_t *data, xmms_error_t *error)
 			return 0;
 		}
 		g_mutex_lock (data->filler_mutex);
-		/* maybe not the best place for this */
+		/* maybe not the best place for this nor the best way to handle the situation */
+		if (data->bufferlen > ((CURL_MAX_WRITE_SIZE * 500) - (CURL_MAX_WRITE_SIZE * 2))) {
+			XMMS_DBG ("Too much data filling my buffer up I just cant hack it!");
+			data->done = TRUE;
+			return 0;
+		}
+		if (data->bufferlen > ((CURL_MAX_WRITE_SIZE * 500) - (CURL_MAX_WRITE_SIZE * 5))) {
+			sleep(5);
+		}
 		if (data->bufferlen > ((CURL_MAX_WRITE_SIZE * 500) - (CURL_MAX_WRITE_SIZE * 100))) {
-			/* nor the best way to handle the situation */
 			sleep(1);
 		}
 		if (data->bufferlen > 0) {
