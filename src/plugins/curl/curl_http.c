@@ -367,15 +367,19 @@ curl_input_filler(void *arg)
 	data = xmms_xform_private_data_get (xform);
 	xmms_error_t error;	// its a lie!
 	int c;
+	g_usleep(50000);
 	while(data->kill_input_thread != 1) {
 		for(c=0;c<150;c++) {
-			fill_buffer(xform, data, &error);
+			if(fill_buffer(xform, data, &error) == 0) {
+					XMMS_DBG ("Curl input buffer filler filled to the end!");
+					return NULL;
+      }
 			if(data->kill_input_thread == 1) {
 					XMMS_DBG ("Curl input buffer filler knows its time to go!");
 					return NULL;
 			}
 		}
-		g_usleep(1000000);
+
 		if(data->verbose == 1) {
 			g_mutex_lock (data->filler_mutex);
 			XMMS_DBG ("Curl input buffer is %d bytes at this time", data->bufferlen);
@@ -463,7 +467,7 @@ fill_buffer (xmms_xform_t *xform, xmms_curl_data_t *data, xmms_error_t *error)
 			return 0;
 		}
 		g_mutex_lock (data->filler_mutex);
-		if (data->bufferlen > 32000) {
+		if (data->bufferlen > 64000) {
 				g_mutex_unlock (data->filler_has_some_data_mutex);
 		}
 		if (data->bufferlen > 0) {
@@ -487,8 +491,10 @@ xmms_curl_read (xmms_xform_t *xform, void *buffer, gint len,
 	data = xmms_xform_private_data_get (xform);
 	g_return_val_if_fail (data, -1);
 
+	/* 
 	if (data->done)
 		return 0;
+	*/
 
 	while (TRUE) {
 
