@@ -57,7 +57,7 @@ typedef struct {
 	gboolean broken_version;
 	GThread *filler_thread;
 	GMutex *filler_mutex;
-  gint kill_input_thread;
+	gint kill_input_thread;
 	gint buffer_seconds;
 	gint verbose;
 	gint stream;
