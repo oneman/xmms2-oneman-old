@@ -57,6 +57,7 @@ typedef struct {
 	gboolean broken_version;
 	GThread *filler_thread;
 	GMutex *filler_mutex;
+	GMutex *filler_has_some_data_mutex;
 	gint kill_input_thread;
 	gint buffer_seconds;
 	gint verbose;
@@ -300,6 +301,8 @@ xmms_curl_init (xmms_xform_t *xform)
 	xmms_xform_private_data_set (xform, data);
 
 	data->filler_mutex = g_mutex_new ();
+	data->filler_has_some_data_mutex = g_mutex_new ();
+	g_mutex_lock (data->filler_has_some_data_mutex);
 	data->kill_input_thread = 0;
 	data->stream = 0;
 	data->got_headers = 0;
@@ -415,6 +418,7 @@ fill_buffer (xmms_xform_t *xform, xmms_curl_data_t *data, xmms_error_t *error)
 				return -1;
 			} else if (ret == 0) {
 				xmms_error_set (error, XMMS_ERROR_GENERIC, "Read timeout");
+				g_mutex_unlock (data->filler_has_some_data_mutex); /* incase we fail read this lets this xforms read fail thru */
 				return -1;
 			}
 
@@ -470,6 +474,9 @@ fill_buffer (xmms_xform_t *xform, xmms_curl_data_t *data, xmms_error_t *error)
 		if (data->bufferlen > ((CURL_MAX_WRITE_SIZE * 500) - (CURL_MAX_WRITE_SIZE * 100))) {
 			sleep(1);
 		}
+		if (data->bufferlen > 32000) {
+				g_mutex_unlock (data->filler_has_some_data_mutex);
+		}
 		if (data->bufferlen > 0) {
 			g_mutex_unlock (data->filler_mutex);
 			return 1;
@@ -498,6 +505,7 @@ xmms_curl_read (xmms_xform_t *xform, void *buffer, gint len,
 
 		/* if we have data available, just pick it up (even if there's
 		   less bytes available than was requested) */
+		g_mutex_lock (data->filler_has_some_data_mutex);
 		g_mutex_lock (data->filler_mutex);
 		if (data->bufferlen) {
 			len = MIN (len, data->bufferlen);
@@ -582,10 +590,8 @@ xmms_curl_callback_header (void *ptr, size_t size, size_t nmemb, void *stream)
 	g_return_val_if_fail (ptr, 0);
 
 	header = g_strndup ((gchar*)ptr, size * nmemb);
-	XMMS_DBG (" ***************** IG GOT TO HEEREy");
 	func = header_handler_find (header);
 	if (func != NULL) {
-	XMMS_DBG (" header funk called in funcay");
 		gchar *val = strchr (header, ':');
 		if (val) {
 			g_strstrip (++val);
