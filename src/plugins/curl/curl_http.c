@@ -337,8 +337,6 @@ xmms_curl_init (xmms_xform_t *xform)
 		}
 
 		data->filler_thread = g_thread_create (curl_input_filler, xform, TRUE, NULL);
-		XMMS_DBG ("Buffering stream for %d seconds...", data->buffer_seconds);
-		sleep(data->buffer_seconds);
 
 	} else {
 		xmms_xform_outdata_type_add (xform,
@@ -367,7 +365,12 @@ curl_input_filler(void *arg)
 	data = xmms_xform_private_data_get (xform);
 	xmms_error_t error;	// its a lie!
 	int c;
-	g_usleep(50000);
+	if (data->stream == 0) {
+		g_usleep(50000);
+	} else {
+		XMMS_DBG ("Buffering stream for %d seconds...", data->buffer_seconds);
+		g_usleep(data->buffer_seconds * 1000000);
+	}
 	while(data->kill_input_thread != 1) {
 		for(c=0;c<150;c++) {
 			if(fill_buffer(xform, data, &error) == 0) {
