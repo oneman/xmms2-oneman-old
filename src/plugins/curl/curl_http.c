@@ -57,7 +57,8 @@ typedef struct {
 	gboolean broken_version;
 	GThread *filler_thread;
 	GMutex *filler_mutex;
-  int kill_input_thread;
+  gint kill_input_thread;
+	gint buffer_seconds;
 } xmms_curl_data_t;
 
 typedef void (*handler_func_t) (xmms_xform_t *xform, gchar *header);
@@ -128,6 +129,8 @@ xmms_curl_plugin_setup (xmms_xform_plugin_t *xform_plugin)
 	  xmms_plugin_info_add (plugin, "Author", "XMMS Team");
 	*/
 
+	xmms_xform_plugin_config_property_register (xform_plugin, "buffer_seconds",
+	                                            "3", NULL, NULL);
 	xmms_xform_plugin_config_property_register (xform_plugin, "shoutcastinfo",
 	                                            "1", NULL, NULL);
 	xmms_xform_plugin_config_property_register (xform_plugin, "verbose",
@@ -190,6 +193,9 @@ xmms_curl_init (xmms_xform_t *xform)
 
 	val = xmms_xform_config_lookup (xform, "connecttimeout");
 	connecttimeout = xmms_config_property_get_int (val);
+
+	val = xmms_xform_config_lookup (xform, "buffer_seconds");
+	data->buffer_seconds = xmms_config_property_get_int (val);
 
 	val = xmms_xform_config_lookup (xform, "readtimeout");
 	data->read_timeout = xmms_config_property_get_int (val);
@@ -321,8 +327,8 @@ xmms_curl_init (xmms_xform_t *xform)
 
 	data->filler_thread = g_thread_create (curl_input_filler, xform, TRUE, NULL);
 
-	XMMS_DBG ("Buffering for three seconds...");
-	sleep(3);
+	XMMS_DBG ("Buffering for %d seconds...", data->buffer_seconds);
+	sleep(data->buffer_seconds);
 	return TRUE;
 }
 
