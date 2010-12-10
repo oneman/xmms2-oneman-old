@@ -60,13 +60,16 @@ typedef struct {
   gint kill_input_thread;
 	gint buffer_seconds;
 	gint verbose;
+	gint stream;
+	gint got_headers;
 } xmms_curl_data_t;
 
 typedef void (*handler_func_t) (xmms_xform_t *xform, gchar *header);
 
 static void header_handler_contentlength (xmms_xform_t *xform, gchar *header);
-static void header_handler_icy_metaint (xmms_xform_t *xform, gchar *header);
+static void header_handler_contenttype (xmms_xform_t *xform, gchar *header);
 static void header_handler_icy_name (xmms_xform_t *xform, gchar *header);
+static void header_handler_icy_metaint (xmms_xform_t *xform, gchar *header);
 static void header_handler_icy_genre (xmms_xform_t *xform, gchar *header);
 static handler_func_t header_handler_find (gchar *header);
 
@@ -77,10 +80,10 @@ typedef struct {
 
 handler_t handlers[] = {
 	{ "content-length", header_handler_contentlength },
+	{ "content-type", header_handler_contenttype },
 	{ "icy-metaint", header_handler_icy_metaint },
 	{ "icy-name", header_handler_icy_name },
 	{ "icy-genre", header_handler_icy_genre },
-/*	{ "\r\n", header_handler_last }, */
 	{ NULL, NULL }
 };
 
@@ -138,9 +141,8 @@ xmms_curl_plugin_setup (xmms_xform_plugin_t *xform_plugin)
 	                                            "0", NULL, NULL);
 	xmms_xform_plugin_config_property_register (xform_plugin, "connecttimeout",
 	                                            "15", NULL, NULL);
-	/* TODO is this timeout of 10 seconds really appropriate? */
 	xmms_xform_plugin_config_property_register (xform_plugin, "readtimeout",
-	                                            "10", NULL, NULL);
+	                                            "2", NULL, NULL);
 	xmms_xform_plugin_config_property_register (xform_plugin, "useproxy",
 	                                            "0", NULL, NULL);
 	xmms_xform_plugin_config_property_register (xform_plugin, "proxyaddress",
@@ -179,7 +181,7 @@ xmms_curl_init (xmms_xform_t *xform)
 	xmms_curl_data_t *data;
 	xmms_config_property_t *val;
 	xmms_error_t error;
-	gint metaint, connecttimeout, useproxy, authproxy;
+	gint connecttimeout, useproxy, authproxy;
 	const gchar *proxyaddress, *proxyuser, *proxypass;
 	gchar proxyuserpass[90];
 	const gchar *url;
@@ -200,9 +202,6 @@ xmms_curl_init (xmms_xform_t *xform)
 
 	val = xmms_xform_config_lookup (xform, "readtimeout");
 	data->read_timeout = xmms_config_property_get_int (val);
-
-	val = xmms_xform_config_lookup (xform, "shoutcastinfo");
-	metaint = xmms_config_property_get_int (val);
 
 	val = xmms_xform_config_lookup (xform, "verbose");
 	data->verbose = xmms_config_property_get_int (val);
@@ -241,7 +240,7 @@ xmms_curl_init (xmms_xform_t *xform)
 		data->broken_version = TRUE;
 	}
 
-	if (!data->broken_version && metaint == 1) {
+	if (!data->broken_version) {
 		data->http_req_headers = curl_slist_append (data->http_req_headers,
 		                                            "Icy-MetaData: 1");
 	}
@@ -302,6 +301,9 @@ xmms_curl_init (xmms_xform_t *xform)
 
 	data->filler_mutex = g_mutex_new ();
 	data->kill_input_thread = 0;
+	data->stream = 0;
+	data->got_headers = 0;
+	data->meta_offset = 0;
 
 	/* perform initial fill to see if it contains shoutcast metadata or not */
 	if (fill_buffer (xform, data, &error) <= 0) {
@@ -310,26 +312,40 @@ xmms_curl_init (xmms_xform_t *xform)
 		xmms_curl_free_data (data);
 		return FALSE;
 	}
+	
+	while(data->got_headers == 0) { }
 
-	if (data->meta_offset > 0) {
+	if (data->stream == 1) {
 		XMMS_DBG ("icy-metadata detected");
-		xmms_xform_auxdata_set_int (xform, "meta_offset", data->meta_offset);
 
-		xmms_xform_outdata_type_add (xform,
-		                             XMMS_STREAM_TYPE_MIMETYPE,
-		                             "application/x-icy-stream",
-		                             XMMS_STREAM_TYPE_END);
+		/* if we detect that response from mr server */
+		if(data->meta_offset > 0) {
+			xmms_xform_auxdata_set_int (xform, "meta_offset", data->meta_offset);
+
+			xmms_xform_outdata_type_add (xform,
+		                             	XMMS_STREAM_TYPE_MIMETYPE,
+		                             	"application/x-icy-stream",
+		                             	XMMS_STREAM_TYPE_END);
+		} else {
+			xmms_xform_outdata_type_add (xform,
+		                             	XMMS_STREAM_TYPE_MIMETYPE,
+		                             	"application/octet-stream",
+		                             	XMMS_STREAM_TYPE_END);
+		}
+
+		data->filler_thread = g_thread_create (curl_input_filler, xform, TRUE, NULL);
+		XMMS_DBG ("Buffering stream for %d seconds...", data->buffer_seconds);
+		sleep(data->buffer_seconds);
+
 	} else {
 		xmms_xform_outdata_type_add (xform,
 		                             XMMS_STREAM_TYPE_MIMETYPE,
 		                             "application/octet-stream",
 		                             XMMS_STREAM_TYPE_END);
+
+		data->filler_thread = g_thread_create (curl_input_filler, xform, TRUE, NULL);
 	}
 
-	data->filler_thread = g_thread_create (curl_input_filler, xform, TRUE, NULL);
-
-	XMMS_DBG ("Buffering for %d seconds...", data->buffer_seconds);
-	sleep(data->buffer_seconds);
 	return TRUE;
 }
 
@@ -351,6 +367,10 @@ curl_input_filler(void *arg)
 	while(data->kill_input_thread != 1) {
 		for(c=0;c<150;c++) {
 			fill_buffer(xform, data, &error);
+			if(data->kill_input_thread == 1) {
+					XMMS_DBG ("Curl input buffer filler knows its time to go!");
+					return NULL;
+			}
 		}
 		if(data->verbose == 1) {
 			g_mutex_lock (data->filler_mutex);
@@ -504,8 +524,6 @@ xmms_curl_destroy (xmms_xform_t *xform)
 
 	data = xmms_xform_private_data_get (xform);
 	g_return_if_fail (data);
-	data->kill_input_thread = 1;
-	g_thread_join (data->filler_thread);
 	xmms_curl_free_data (data);
 }
 
@@ -524,6 +542,11 @@ xmms_curl_callback_write (void *ptr, size_t size, size_t nmemb, void *stream)
 
 	data = xmms_xform_private_data_get (xform);
 	g_return_val_if_fail (data, 0);
+
+	if(data->got_headers == 0) { 
+		/* If were getting data we got headers right??? */
+		data->got_headers = 1;
+	}
 
 	len = size * nmemb;
 
@@ -559,9 +582,10 @@ xmms_curl_callback_header (void *ptr, size_t size, size_t nmemb, void *stream)
 	g_return_val_if_fail (ptr, 0);
 
 	header = g_strndup ((gchar*)ptr, size * nmemb);
-
+	XMMS_DBG (" ***************** IG GOT TO HEEREy");
 	func = header_handler_find (header);
 	if (func != NULL) {
+	XMMS_DBG (" header funk called in funcay");
 		gchar *val = strchr (header, ':');
 		if (val) {
 			g_strstrip (++val);
@@ -610,6 +634,28 @@ header_handler_contentlength (xmms_xform_t *xform,
 }
 
 static void
+header_handler_contenttype (xmms_xform_t *xform,
+                              gchar *header)
+{
+	const gchar *metakey = XMMS_MEDIALIB_ENTRY_PROPERTY_MIME;
+	xmms_xform_metadata_set_str (xform, metakey, header);
+}
+
+static void
+header_handler_icy_name (xmms_xform_t *xform,
+                         gchar *header)
+{
+	xmms_curl_data_t *data;
+	data = xmms_xform_private_data_get (xform);
+
+	/* It must be a stream I do think! */
+	data->stream = 1;
+
+	const gchar *metakey = XMMS_MEDIALIB_ENTRY_PROPERTY_CHANNEL;
+	xmms_xform_metadata_set_str (xform, metakey, header);
+}
+
+static void
 header_handler_icy_metaint (xmms_xform_t *xform,
                             gchar *header)
 {
@@ -618,14 +664,6 @@ header_handler_icy_metaint (xmms_xform_t *xform,
 	data = xmms_xform_private_data_get (xform);
 
 	data->meta_offset = strtoul (header, NULL, 10);
-}
-
-static void
-header_handler_icy_name (xmms_xform_t *xform,
-                         gchar *header)
-{
-	const gchar *metakey = XMMS_MEDIALIB_ENTRY_PROPERTY_CHANNEL;
-	xmms_xform_metadata_set_str (xform, metakey, header);
 }
 
 static void
@@ -648,6 +686,10 @@ xmms_curl_free_data (xmms_curl_data_t *data)
 	curl_slist_free_all (data->http_req_headers);
 
 	g_free (data->buffer);
+	/* this stuff has to be in free and not destroy since on quit only free is called..
+		 I didn't invent all of this ;p */
+	data->kill_input_thread = 1;
+	g_thread_join (data->filler_thread);
 	g_mutex_free (data->filler_mutex);
 	g_free (data->url);
 	g_free (data);
