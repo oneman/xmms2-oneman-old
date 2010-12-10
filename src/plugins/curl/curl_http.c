@@ -225,7 +225,7 @@ xmms_curl_init (xmms_xform_t *xform)
 	g_snprintf (proxyuserpass, sizeof (proxyuserpass), "%s:%s", proxyuser,
 	            proxypass);
 	/* Just make a big buffer for now but it needs to be smarter in future */
-	data->buffer = g_malloc (CURL_MAX_WRITE_SIZE * 500); 
+	data->buffer = g_malloc (200000000); 
 	data->url = g_strdup (url);
 
 	/* check for broken version of curl here */
@@ -375,6 +375,7 @@ curl_input_filler(void *arg)
 					return NULL;
 			}
 		}
+		g_usleep(1000000);
 		if(data->verbose == 1) {
 			g_mutex_lock (data->filler_mutex);
 			XMMS_DBG ("Curl input buffer is %d bytes at this time", data->bufferlen);
@@ -462,18 +463,6 @@ fill_buffer (xmms_xform_t *xform, xmms_curl_data_t *data, xmms_error_t *error)
 			return 0;
 		}
 		g_mutex_lock (data->filler_mutex);
-		/* maybe not the best place for this nor the best way to handle the situation */
-		if (data->bufferlen > ((CURL_MAX_WRITE_SIZE * 500) - (CURL_MAX_WRITE_SIZE * 2))) {
-			XMMS_DBG ("Too much data filling my buffer up I just cant hack it!");
-			data->done = TRUE;
-			return 0;
-		}
-		if (data->bufferlen > ((CURL_MAX_WRITE_SIZE * 500) - (CURL_MAX_WRITE_SIZE * 5))) {
-			sleep(5);
-		}
-		if (data->bufferlen > ((CURL_MAX_WRITE_SIZE * 500) - (CURL_MAX_WRITE_SIZE * 100))) {
-			sleep(1);
-		}
 		if (data->bufferlen > 32000) {
 				g_mutex_unlock (data->filler_has_some_data_mutex);
 		}
@@ -506,6 +495,7 @@ xmms_curl_read (xmms_xform_t *xform, void *buffer, gint len,
 		/* if we have data available, just pick it up (even if there's
 		   less bytes available than was requested) */
 		g_mutex_lock (data->filler_has_some_data_mutex);
+		g_mutex_unlock (data->filler_has_some_data_mutex);
 		g_mutex_lock (data->filler_mutex);
 		if (data->bufferlen) {
 			len = MIN (len, data->bufferlen);
