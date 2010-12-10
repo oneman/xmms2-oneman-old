@@ -223,8 +223,8 @@ xmms_curl_init (xmms_xform_t *xform)
 
 	g_snprintf (proxyuserpass, sizeof (proxyuserpass), "%s:%s", proxyuser,
 	            proxypass);
-
-	data->buffer = g_malloc (CURL_MAX_WRITE_SIZE * 396);
+	/* Just make a big buffer for now but it needs to be smarter in future */
+	data->buffer = g_malloc (CURL_MAX_WRITE_SIZE * 500); 
 	data->url = g_strdup (url);
 
 	/* check for broken version of curl here */
@@ -246,8 +246,6 @@ xmms_curl_init (xmms_xform_t *xform)
 	}
 
 	data->curl_easy = curl_easy_init ();
-
-		XMMS_DBG ("did set buffersize");
 
 	curl_easy_setopt (data->curl_easy, CURLOPT_BUFFERSIZE, CURL_MAX_WRITE_SIZE);
 	curl_easy_setopt (data->curl_easy, CURLOPT_URL, data->url);
@@ -327,47 +325,31 @@ xmms_curl_init (xmms_xform_t *xform)
 		                             XMMS_STREAM_TYPE_END);
 	}
 
-  //sleep(1);
-  //xmms_curl_buffer_thread_monkey *important_info;
-
-  //important_info->xform = xform;
-  //important_info->data = data;
-  //important_info->error = &error;
   data->filler_thread = g_thread_create (curl_input_filler, xform, TRUE, NULL);
 
- 		XMMS_DBG ("Buffering for three seconds mmmk");
-     int i, k;
-     for(k=0;k<2;k++)    {
-     for(i=0;i<15;i++)    {
-
-				//fill_buffer (xform, data, &error);
-	   }
-       sleep(1);
-		   //if(k == 0) { XMMS_DBG ("one ..."); }
-		   //if(k == 1) { XMMS_DBG ("two (getting closer)......"); }
-		   //if(k == 2) { XMMS_DBG ("threeeeeeeeeeeeee ..."); }
-     }
-
+	XMMS_DBG ("Buffering for three seconds...");
+	sleep(3);
 	return TRUE;
 }
 
 static void *
-curl_input_filler(void *arg) {
- 		XMMS_DBG ("hello from input filler thread");
+curl_input_filler(void *arg)
+{
+	/* this needs to be smarter in a few ways.
+		 1) check to make sure we dont overflow buffer
+		 2) sometimes just nap instead
+		 3) I forgot
+  */
+	XMMS_DBG ("Curl input buffer filler thread started");
 	xmms_xform_t *xform = (xmms_xform_t *)arg;
 	xmms_curl_data_t *data;
-  	data = xmms_xform_private_data_get (xform);
-	xmms_error_t error;
-  int i;
-  while(data->kill_input_thread != 1) {
-    for(i=0;i<35;i++)    {
-    	fill_buffer(xform, data, &error); 
-    }
-    i = 0;
-    //sleep(1);
-  }
- 		XMMS_DBG ("input filler thread is now dead");
-  	return NULL;
+	data = xmms_xform_private_data_get (xform);
+	xmms_error_t error;	// its a lie!
+	while(data->kill_input_thread != 1) {
+		fill_buffer(xform, data, &error); 
+	}
+	XMMS_DBG ("Curl input buffer filler thread says buh bye babe! ;)");
+	return NULL;
 }
 
 static gint
@@ -409,11 +391,9 @@ fill_buffer (xmms_xform_t *xform, xmms_curl_data_t *data, xmms_error_t *error)
 
 		data->curl_code = curl_multi_perform (data->curl_multi, &handles);
 
-    //XMMS_DBG ("Fill Buffer Called and curl says: %s !", curl_multi_strerror (data->curl_code));
-
 		if (data->curl_code == CURLM_CALL_MULTI_PERFORM) { 
-    	XMMS_DBG ("it really was multi perform!!!");
-    }
+			XMMS_DBG ("Curl says: CURLM_CALL_MULTI_PERFORM we must be far behind the stream/remote file!");
+		}
 
 		if (data->curl_code != CURLM_CALL_MULTI_PERFORM &&
 		    data->curl_code != CURLM_OK) {
@@ -446,10 +426,9 @@ fill_buffer (xmms_xform_t *xform, xmms_curl_data_t *data, xmms_error_t *error)
 			data->done = TRUE;
 			return 0;
 		}
-    g_mutex_lock (data->filler_mutex);
+		g_mutex_lock (data->filler_mutex);
 		if (data->bufferlen > 0) {
-      g_mutex_unlock (data->filler_mutex);
-      //XMMS_DBG ("hi. My buffer is now %d bytes", data->bufferlen);
+			g_mutex_unlock (data->filler_mutex);
 			return 1;
 		}
     g_mutex_unlock (data->filler_mutex);
@@ -461,8 +440,7 @@ xmms_curl_read (xmms_xform_t *xform, void *buffer, gint len,
                 xmms_error_t *error)
 {
 	xmms_curl_data_t *data;
-	gint ret;
-					//XMMS_DBG ("curl read was called and len was %d", len);
+
 	g_return_val_if_fail (xform, -1);
 	g_return_val_if_fail (buffer, -1);
 	g_return_val_if_fail (error, -1);
@@ -472,14 +450,13 @@ xmms_curl_read (xmms_xform_t *xform, void *buffer, gint len,
 
 	if (data->done)
 		return 0;
-  XMMS_DBG ("read was called and requested %d bytes", len);
+
 	while (TRUE) {
 
 		/* if we have data available, just pick it up (even if there's
 		   less bytes available than was requested) */
 	  g_mutex_lock (data->filler_mutex);
 		if (data->bufferlen) {
-					//XMMS_DBG ("it was less but thats ok right");
 			len = MIN (len, data->bufferlen);
 			memcpy (buffer, data->buffer, len);
 			data->bufferlen -= len;
@@ -490,20 +467,9 @@ xmms_curl_read (xmms_xform_t *xform, void *buffer, gint len,
 			return len;
 		}
 	    g_mutex_unlock (data->filler_mutex);
-/*    int i;
-  
-     for(i=0;i<44;i++)    {
 
-				fill_buffer (xform, data, error);
-	   }
-
-*/
-		XMMS_DBG ("Got to a bad place");
-	//	ret = fill_buffer (xform, data, error);
-ret = 0;
-		if (ret == 0 || ret == -1) {
-			return ret;
-		}
+		XMMS_DBG ("Got to a bad place, it seems we have run out of data from where ever curl was getting it from!");
+		return 0;
 	}
 }
 
@@ -537,11 +503,8 @@ xmms_curl_callback_write (void *ptr, size_t size, size_t nmemb, void *stream)
 	g_return_val_if_fail (data, 0);
 
 	len = size * nmemb;
-  XMMS_DBG("curl write callback was called and got in %d bytes", len);
-	//g_return_val_if_fail ((data->bufferlen + len) <= CURL_MAX_WRITE_SIZE, 0);
 
 	g_mutex_lock (data->filler_mutex);
-  XMMS_DBG("hi me");
 	memcpy (data->buffer + data->bufferlen, ptr, len);
 	data->bufferlen = data->bufferlen + len;
 	g_mutex_unlock (data->filler_mutex);
