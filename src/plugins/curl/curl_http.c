@@ -60,6 +60,7 @@ typedef struct {
 	GMutex *filler_has_some_data_mutex;
 	gint kill_input_thread;
 	gint buffer_seconds;
+	gint buffer_megabytes;
 	gint verbose;
 	gint stream;
 	gint got_headers;
@@ -136,6 +137,8 @@ xmms_curl_plugin_setup (xmms_xform_plugin_t *xform_plugin)
 
 	xmms_xform_plugin_config_property_register (xform_plugin, "buffer_seconds",
 	                                            "3", NULL, NULL);
+	xmms_xform_plugin_config_property_register (xform_plugin, "buffer_megabytes",
+	                                            "20", NULL, NULL);
 	xmms_xform_plugin_config_property_register (xform_plugin, "shoutcastinfo",
 	                                            "1", NULL, NULL);
 	xmms_xform_plugin_config_property_register (xform_plugin, "verbose",
@@ -201,6 +204,9 @@ xmms_curl_init (xmms_xform_t *xform)
 	val = xmms_xform_config_lookup (xform, "buffer_seconds");
 	data->buffer_seconds = xmms_config_property_get_int (val);
 
+	val = xmms_xform_config_lookup (xform, "buffer_megabytes");
+	data->buffer_megabytes = xmms_config_property_get_int (val);
+
 	val = xmms_xform_config_lookup (xform, "readtimeout");
 	data->read_timeout = xmms_config_property_get_int (val);
 
@@ -225,7 +231,7 @@ xmms_curl_init (xmms_xform_t *xform)
 	g_snprintf (proxyuserpass, sizeof (proxyuserpass), "%s:%s", proxyuser,
 	            proxypass);
 	/* Just make a big buffer for now but it needs to be smarter in future */
-	data->buffer = g_malloc (200000000); 
+	data->buffer = g_malloc (data->buffer_megabytes * 1000000); 
 	data->url = g_strdup (url);
 
 	/* check for broken version of curl here */
@@ -365,18 +371,27 @@ curl_input_filler(void *arg)
 	data = xmms_xform_private_data_get (xform);
 	xmms_error_t error;	// its a lie!
 	int c;
+	XMMS_DBG ("Curl Threaded Buffering Plugin");
+	XMMS_DBG ("Low bitrate streams may take slightly longer than expected to start");
 	if (data->stream == 0) {
 		g_usleep(200000);
 	} else {
 		XMMS_DBG ("Buffering stream for %d seconds...", data->buffer_seconds);
 		g_usleep(data->buffer_seconds * 1000000);
 	}
+	int buffersize = 0;
+	g_mutex_lock (data->filler_mutex);
+	buffersize = data->bufferlen;
+	g_mutex_unlock (data->filler_mutex);
 	while(data->kill_input_thread != 1) {
-		for(c=0;c<150;c++) {
-			if(fill_buffer(xform, data, &error) == 0) {
-					XMMS_DBG ("Curl input buffer filler filled to the end!");
-					return NULL;
-      }
+		for(c=0;c<50;c++) {
+		if(buffersize < ((data->buffer_megabytes * 1000000) - 200000)) {
+				if(fill_buffer(xform, data, &error) == 0) {
+						XMMS_DBG ("Curl input buffer filler filled to the end!");
+						return NULL;
+	      }
+		}
+
 			if(data->kill_input_thread == 1) {
 					XMMS_DBG ("Curl input buffer filler knows its time to go!");
 					return NULL;
@@ -385,19 +400,22 @@ curl_input_filler(void *arg)
 		if (data->stream == 1){
 			g_mutex_unlock (data->filler_has_some_data_mutex);
 		}
-		int buffersize = 0;
+
 		g_mutex_lock (data->filler_mutex);
 		buffersize = data->bufferlen;
 		g_mutex_unlock (data->filler_mutex);
 		if(buffersize > 1000000) {
 					g_usleep(3000000); /* over a meg of input buffer? yawn.. lets sleep on it */
 		}
-		if(buffersize > 1000000) {
-					g_usleep(3000000); /* over a meg of input buffer? yawn.. lets sleep on it */
+		if(buffersize > 2000000) {
+					g_usleep(6000000); /* over a 2 meg of input buffer? yawn.. lets sleep on it */
+		}
+		if(buffersize > 3000000) {
+					g_usleep(9000000); /* over a 3 meg of input buffer? yawn.. lets sleep on it */
 		}
 		if(data->verbose == 1) {
 			g_mutex_lock (data->filler_mutex);
-			XMMS_DBG ("Curl input buffer is %d bytes at this time", data->bufferlen);
+			XMMS_DBG ("Curl input buffer is %d of %d bytes full at this time", data->bufferlen, (data->buffer_megabytes * 1000000));
 			g_mutex_unlock (data->filler_mutex);
 		}
 	c = 0;
