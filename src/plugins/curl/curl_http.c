@@ -59,6 +59,7 @@ typedef struct {
 	GMutex *filler_mutex;
   gint kill_input_thread;
 	gint buffer_seconds;
+	gint verbose;
 } xmms_curl_data_t;
 
 typedef void (*handler_func_t) (xmms_xform_t *xform, gchar *header);
@@ -178,7 +179,7 @@ xmms_curl_init (xmms_xform_t *xform)
 	xmms_curl_data_t *data;
 	xmms_config_property_t *val;
 	xmms_error_t error;
-	gint metaint, verbose, connecttimeout, useproxy, authproxy;
+	gint metaint, connecttimeout, useproxy, authproxy;
 	const gchar *proxyaddress, *proxyuser, *proxypass;
 	gchar proxyuserpass[90];
 	const gchar *url;
@@ -204,7 +205,7 @@ xmms_curl_init (xmms_xform_t *xform)
 	metaint = xmms_config_property_get_int (val);
 
 	val = xmms_xform_config_lookup (xform, "verbose");
-	verbose = xmms_config_property_get_int (val);
+	data->verbose = xmms_config_property_get_int (val);
 
 	val = xmms_xform_config_lookup (xform, "useproxy");
 	useproxy = xmms_config_property_get_int (val);
@@ -283,7 +284,7 @@ xmms_curl_init (xmms_xform_t *xform)
 	}
 
 	curl_easy_setopt (data->curl_easy, CURLOPT_NOSIGNAL, 1);
-	curl_easy_setopt (data->curl_easy, CURLOPT_VERBOSE, verbose);
+	curl_easy_setopt (data->curl_easy, CURLOPT_VERBOSE, data->verbose);
 	curl_easy_setopt (data->curl_easy, CURLOPT_SSL_VERIFYPEER, 0);
 	curl_easy_setopt (data->curl_easy, CURLOPT_SSL_VERIFYHOST, 0);
 
@@ -346,8 +347,17 @@ curl_input_filler(void *arg)
 	xmms_curl_data_t *data;
 	data = xmms_xform_private_data_get (xform);
 	xmms_error_t error;	// its a lie!
+	int c;
 	while(data->kill_input_thread != 1) {
-		fill_buffer(xform, data, &error); 
+		for(c=0;c<150;c++) {
+			fill_buffer(xform, data, &error);
+		}
+		if(data->verbose == 1) {
+			g_mutex_lock (data->filler_mutex);
+			XMMS_DBG ("Curl input buffer is %d bytes at this time", data->bufferlen);
+			g_mutex_unlock (data->filler_mutex);
+		}
+	c = 0;
 	}
 	XMMS_DBG ("Curl input buffer filler thread says buh bye babe! ;)");
 	return NULL;
