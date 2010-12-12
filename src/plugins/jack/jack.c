@@ -117,7 +117,7 @@ xmms_jack_connect (xmms_output_t *output, xmms_jack_data_t *data)
 
 	for (i = 0; i < CHANNELS; i++) {
 		gchar name[16];
-		g_snprintf (name, sizeof (name), "out_%d", i);
+		g_snprintf (name, sizeof (name), "out_%d", i + 1);
 		data->ports[i] = jack_port_register (data->jack, name,
 		                                     JACK_DEFAULT_AUDIO_TYPE,
 		                                     (JackPortIsOutput |
@@ -230,10 +230,10 @@ xmms_jack_status (xmms_output_t *output, xmms_playback_status_t status)
 		return FALSE;
 	}
 
-	if (!xmms_jack_ports_connected (data) && !xmms_jack_connect_ports (data)) {
+/*	if (!xmms_jack_ports_connected (data) && !xmms_jack_connect_ports (data)) {
 		return FALSE;
 	}
-
+*/
 	if (status == XMMS_PLAYBACK_STATUS_PLAY) {
 		data->running = TRUE;
 	} else {
