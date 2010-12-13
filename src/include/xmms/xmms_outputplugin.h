@@ -309,6 +309,7 @@ void xmms_output_stream_type_add (xmms_output_t *output, ...);
  * @return the number of bytes read
  */
 gint xmms_output_read (xmms_output_t *output, char *buffer, gint len);
+gint xmms_output_peek (xmms_output_t *output, char *buffer, gint len);
 
 /**
  * determine there is enough data in the ringbuffer to fill out a peroid

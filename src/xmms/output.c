@@ -543,6 +543,47 @@ output_is_ready_for_period(xmms_output_t *output, gint len)
 }
 
 gint
+xmms_output_peek (xmms_output_t *output, char *buffer, gint len)
+{
+	gint ret;
+	xmms_error_t err;
+
+	xmms_error_reset (&err);
+
+	g_return_val_if_fail (output, -1);
+	g_return_val_if_fail (buffer, -1);
+
+	g_mutex_lock (output->filler_mutex);
+	xmms_ringbuf_wait_used (output->filler_buffer, len, output->filler_mutex);
+	ret = xmms_ringbuf_peek (output->filler_buffer, buffer, len);
+	//if (ret == 0 && xmms_ringbuf_iseos (output->filler_buffer)) {
+	//	xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_STOP);
+	//	g_mutex_unlock (output->filler_mutex);
+	//	return -1;
+	//}
+	g_mutex_unlock (output->filler_mutex);
+
+	//update_playtime (output, ret);
+
+	if (ret < len) {
+		XMMS_DBG ("Underrun %d of %d (%d)", ret, len, xmms_sample_frame_size_get (output->format));
+
+		if ((ret % xmms_sample_frame_size_get (output->format)) != 0) {
+			xmms_log_error ("***********************************");
+			xmms_log_error ("* Read non-multiple of sample size,");
+			xmms_log_error ("*  you probably hear noise now :)");
+			xmms_log_error ("***********************************");
+		}
+		output->buffer_underruns++;
+	}
+
+	//output->bytes_written += ret;
+
+	return ret;
+}
+
+
+gint
 xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 {
 	gint ret;

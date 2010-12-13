@@ -43,6 +43,7 @@ typedef struct xmms_jack_data_St {
 	gint status;
 	xmms_samplefloat_t fade_samples;
 	xmms_samplefloat_t faded_samples;
+	xmms_samplefloat_t next[CHANNELS*1024];
 	gint fading;
 	gint seeking;
 	gint connect_to_phys_on_startup;
@@ -318,7 +319,7 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 	}
 
 	xmms_samplefloat_t fade_per_sample = -144.0f / data->fade_samples;
-	xmms_samplefloat_t fade_per_sample_seek = -70.0f / 1024.0f;
+	xmms_samplefloat_t fade_per_sample_seek = -70.0f / 2048.0f;
 	xmms_samplefloat_t sample;
 	xmms_samplefloat_t sample_result;
 	xmms_samplefloat_t fade_value;
@@ -377,16 +378,25 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 			t = MIN (toread * CHANNELS * sizeof (xmms_samplefloat_t),
 			         sizeof (tbuf));
 
-			if (output_is_ready_for_period(output, t) == 0) {
+			if (((data->seeking == 1) || (data->seeking == 0)) && (output_is_ready_for_period(output, t) == 0)) {
 				res = xmms_output_read (output, (gchar *)tbuf, t);
+
+				if (((data->seeking == 1) || (data->seeking == 0)) && (output_is_ready_for_period(output, t) == 0)) {
+					xmms_output_peek (output, (gchar *)data->next, t);
+					} else {
+						xmms_log_info ("Not Enough Bits in the Ring Buffer to peek"); 
+						break;
+					}
 			} else {
-				/* xmms_log_info ("Not Enough Bits in the Ring Buffer, its going to be a silent period..."); */
-				break;
+				if (data->seeking == 0) {
+					xmms_log_info ("Not Enough Bits in the Ring Buffer, its going to be a silent period..."); 
+					break;
+				}
 			}
 
 			if (res <= 0) {
 				XMMS_DBG ("output_read returned %d", res);
-				break;
+					break;
 			}
 
 			res /= CHANNELS * sizeof (xmms_samplefloat_t);
@@ -405,13 +415,14 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 					} else {
 						if(data->running == TRUE) {
 							if(data->seeking) {
-							 if(data->seeking < 2) {
+							 if(data->seeking < 3) {
 							  	fade_value = (xmms_samplefloat_t)(db_to_value(fade_per_sample_seek * data->faded_samples));
 								} else {
 									//fade_value = (xmms_samplefloat_t)(db_to_value(fade_per_sample_seek * (1024.0f - data->faded_samples)));
 									buf[j][i] = 0.0;
 								}
 								sample = tbuf[i*CHANNELS + j];
+								if(data->seeking == 2) { sample = data->next[i*CHANNELS + j];} 
 								sample_result = (sample * fade_value);
 								buf[j][i] = sample_result;
 							} else {
@@ -436,12 +447,12 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 		}
 	}
 
-	if((data->seeking < 2) && (data->seeking > 0)) {
+	if((data->seeking < 3) && (data->seeking > 0)) {
 		data->seeking += 1;
-		data->faded_samples = 0;
+		//data->faded_samples = 0;
 	}
 
-	if(data->seeking == 2) {
+	if(data->seeking == 3) {
     XMMS_DBG ("seeked with %f", fade_per_sample_seek);
 		data->faded_samples = 0;
 		data->seeking = 0;
