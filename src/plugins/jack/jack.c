@@ -41,10 +41,9 @@ typedef struct xmms_jack_data_St {
 	gboolean error;
 	gboolean running;
 	gint status;
-	gint fade_samples;
-	gint faded_samples;
+	xmms_samplefloat_t fade_samples;
+	xmms_samplefloat_t faded_samples;
 	gint fading;
-	gint fade_db_range;
 	gint connect_to_phys_on_startup;
 } xmms_jack_data_t;
 
@@ -94,10 +93,7 @@ xmms_jack_plugin_setup (xmms_output_plugin_t *plugin)
 	xmms_output_plugin_config_property_register (plugin, "clientname", "XMMS2",
 	                                             NULL, NULL);
 
-	xmms_output_plugin_config_property_register (plugin, "fading_time_ms", "100",
-	                                             NULL, NULL);
-
-	xmms_output_plugin_config_property_register (plugin, "fade_db_range", "90",
+	xmms_output_plugin_config_property_register (plugin, "fading_time_ms", "90",
 	                                             NULL, NULL);
 
 	xmms_output_plugin_config_property_register (plugin, "connect_to_phys_on_startup", "1",
@@ -169,13 +165,8 @@ xmms_jack_new (xmms_output_t *output)
 	cv = xmms_output_config_lookup (output, "fading_time_ms");
 	fading_time_ms = xmms_config_property_get_int (cv);
 
-	cv = xmms_output_config_lookup (output, "fade_db_range");
-	data->fade_db_range = xmms_config_property_get_int (cv);
-
 	cv = xmms_output_config_lookup (output, "connect_to_phys_on_startup");
 	data->connect_to_phys_on_startup = xmms_config_property_get_int (cv);
-
-	if (data->fade_db_range > 144) data->fade_db_range = 144;
 
 	data->faded_samples = 0;
 	data->fading = 2;
@@ -194,8 +185,8 @@ xmms_jack_new (xmms_output_t *output)
 		}	
 	}
 
-	data->fade_samples = ((fading_time_ms * ((float)jack_get_sample_rate (data->jack) / 1000.0)) - 100);
-	XMMS_DBG ("Fade Samples is %d", data->fade_samples);
+	data->fade_samples = (fading_time_ms * ((float)jack_get_sample_rate (data->jack) / 1000.0));
+	XMMS_DBG ("Fade Samples is %f", data->fade_samples);
 
 	xmms_output_format_add (output, XMMS_SAMPLE_FORMAT_FLOAT, CHANNELS,
 	                        jack_get_sample_rate (data->jack));
@@ -323,7 +314,7 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 		buf[i] = jack_port_get_buffer (data->ports[i], frames);
 	}
 
-	xmms_samplefloat_t fade_per_sample = ((data->fade_db_range - 10) * -1.0f) / (xmms_samplefloat_t)data->fade_samples;
+	xmms_samplefloat_t fade_per_sample = -144.0f / data->fade_samples;
 	xmms_samplefloat_t sample;
 	xmms_samplefloat_t sample_result;
 	xmms_samplefloat_t fade_value;
@@ -396,20 +387,28 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 			res /= CHANNELS * sizeof (xmms_samplefloat_t);
 			for (i = 0; i < res; i++) {
 				for (j = 0; j < CHANNELS; j++) {
-					if(data->fading) {
+					if((data->fading) && (data->faded_samples <= data->fade_samples)){
 						if(data->fading == 1) {
-							fade_value = ((xmms_samplefloat_t)(db_to_value(fade_per_sample * data->faded_samples)));
-						} else {
-							fade_value = ((xmms_samplefloat_t)(db_to_value(fade_per_sample * (data->fade_samples - data->faded_samples))));
+							fade_value = (xmms_samplefloat_t)(db_to_value(fade_per_sample * data->faded_samples));
+						}
+						if(data->fading == 4) {
+							fade_value = (xmms_samplefloat_t)(db_to_value(fade_per_sample * (data->fade_samples - data->faded_samples)));
 						}
 						sample = tbuf[i*CHANNELS + j];
 						sample_result = (sample * fade_value);
 						buf[j][i] = sample_result;
 					} else {
-						buf[j][i] = tbuf[i*CHANNELS + j];
+						if(data->running == TRUE) {
+							buf[j][i] = tbuf[i*CHANNELS + j];
+						} else {
+							buf[j][i] = 0.0;
+						}
 					}
 				}
-				if(data->fading) {
+				if(data->fading == 1) {
+					data->faded_samples += 1;
+				}
+				if(data->fading == 4) {
 					data->faded_samples += 1;
 				}
 			}
@@ -417,7 +416,7 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 		}
 	}
 	if((data->fading == 1) || (data->fading == 4)) {
-		XMMS_DBG ("An example sample %f was faded by %fdb or %f of value resulting in a sample of %f faded samples at this time is %d", sample, (xmms_samplefloat_t)(fade_per_sample * data->faded_samples), fade_value, sample_result, data->faded_samples);
+		XMMS_DBG ("An example sample %f was faded by %fdb or %f of value resulting in a sample of %f faded samples at this time is %f", sample, fade_per_sample * data->faded_samples, fade_per_sample * ((data->fade_samples - data->faded_samples)), sample_result, data->faded_samples);
 	}
 	/* fill rest of buffer with silence */
 	for (i = frames - toread; i < frames; i++) {
