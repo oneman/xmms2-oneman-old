@@ -19,7 +19,7 @@
 
 #include <glib.h>
 #include <jack/jack.h>
-
+#include <math.h>
 
 /*
  *  Defines
@@ -40,6 +40,9 @@ typedef struct xmms_jack_data_St {
 	gint chunksiz;
 	gboolean error;
 	gboolean running;
+	gint fade_samples;
+	gint faded_samples;
+	gint fading;
 } xmms_jack_data_t;
 
 
@@ -47,6 +50,7 @@ typedef struct xmms_jack_data_St {
  * Function prototypes
  */
 
+float db_to_value(float db);
 static gboolean xmms_jack_plugin_setup (xmms_output_plugin_t *plugin);
 static gboolean xmms_jack_new (xmms_output_t *output);
 static void xmms_jack_destroy (xmms_output_t *output);
@@ -84,6 +88,26 @@ xmms_jack_plugin_setup (xmms_output_plugin_t *plugin)
 	xmms_output_plugin_config_property_register (plugin, "clientname", "XMMS2",
 	                                             NULL, NULL);
 
+	xmms_output_plugin_config_property_register (plugin, "fade_out_on_pause_and_stop", "1",
+	                                             NULL, NULL);
+
+	xmms_output_plugin_config_property_register (plugin, "fade_in_on_play", "1",
+	                                             NULL, NULL);
+
+	xmms_output_plugin_config_property_register (plugin, "fade_on_seek", "1",
+	                                             NULL, NULL);
+
+	xmms_output_plugin_config_property_register (plugin, "fading_time_ms", "41166",
+	                                             NULL, NULL);
+
+	xmms_output_plugin_config_property_register (plugin, "fade_db_range", "144",
+	                                             NULL, NULL);
+/*
+
+* Need to make connecttion to what and when configable
+	xmms_output_plugin_config_property_register (plugin, "connect_on_startup", "1",
+	                                             NULL, NULL);
+*/
 	jack_set_error_function (xmms_jack_error);
 
 	return TRUE;
@@ -141,9 +165,16 @@ static gboolean
 xmms_jack_new (xmms_output_t *output)
 {
 	xmms_jack_data_t *data;
+	const xmms_config_property_t *cv;
 
 	g_return_val_if_fail (output, FALSE);
 	data = g_new0 (xmms_jack_data_t, 1);
+
+	cv = xmms_output_config_lookup (output, "fading_time_ms");
+	data->fade_samples = xmms_config_property_get_int (cv);
+	data->faded_samples = 0;
+	data->fading = 2;
+	data->running = FALSE;
 
 	xmms_output_private_data_set (output, data);
 
@@ -234,6 +265,12 @@ xmms_jack_status (xmms_output_t *output, xmms_playback_status_t status)
 		return FALSE;
 	}
 */
+
+	if (status == 666) {
+		XMMS_DBG ("I got Seeked!");
+		return TRUE;
+	}
+
 	if (status == XMMS_PLAYBACK_STATUS_PLAY) {
 		data->running = TRUE;
 	} else {
@@ -250,6 +287,11 @@ xmms_jack_flush (xmms_output_t *output)
 	/* do nothing... */
 }
 
+float db_to_value(float db)
+{
+  /* 20 log rule */
+  return powf(10.0, db/20.0);
+}
 
 static int
 xmms_jack_process (jack_nframes_t frames, void *arg)
@@ -268,9 +310,53 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 		buf[i] = jack_port_get_buffer (data->ports[i], frames);
 	}
 
+	xmms_samplefloat_t fade_per_sample = -90.0f / (xmms_samplefloat_t)data->fade_samples;
+	xmms_samplefloat_t sample;
+	xmms_samplefloat_t sample_result;
+	xmms_samplefloat_t fade_value;
 	toread = frames;
 
-	if (data->running) {
+	if((TRUE) && (data->running == FALSE) && ((data->faded_samples <= data->fade_samples) && (data->fading == 0))){
+			data->fading = 1;
+		XMMS_DBG ("Fade Begin");
+
+	}
+
+	if((TRUE) && (data->running == FALSE) && ((data->faded_samples >= data->fade_samples) && (data->fading == 1))){
+			data->fading = 2;
+		XMMS_DBG ("Fade Complete");
+
+	}
+
+	if((TRUE) && (data->running == TRUE) && (data->fading == 2)){
+			data->fading = 0;
+			data->faded_samples = 0;
+		XMMS_DBG ("Fade Reset");
+
+	}
+
+	if((TRUE) && (data->running == FALSE) && (data->fading == 2)){
+			data->fading = 3;
+			data->faded_samples = 0;
+		  XMMS_DBG ("Fade In Preped");
+
+	}
+
+	if((TRUE) && (data->running == TRUE) && (data->fading == 3)){
+			data->fading = 4;
+		  XMMS_DBG ("Fade In Begin");
+
+	}
+
+	if((TRUE) && (data->running == TRUE) && ((data->faded_samples >= data->fade_samples) && (data->fading == 4))){
+			data->fading = 2;
+		XMMS_DBG ("Fade In Complete");
+
+	}
+
+
+	if ((data->running) || ((TRUE) && (data->fading == 1)) || ((TRUE) && (data->fading == 4))) {
+
 		while (toread) {
 			gint t;
 
@@ -292,13 +378,29 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 			res /= CHANNELS * sizeof (xmms_samplefloat_t);
 			for (i = 0; i < res; i++) {
 				for (j = 0; j < CHANNELS; j++) {
-					buf[j][i] = tbuf[i*CHANNELS + j];
+					if(data->fading) {
+						if(data->fading == 1) {
+							fade_value = ((xmms_samplefloat_t)(db_to_value(fade_per_sample * data->faded_samples)));
+						} else {
+							fade_value = ((xmms_samplefloat_t)(db_to_value(fade_per_sample * (data->fade_samples - data->faded_samples))));
+						}
+						sample = tbuf[i*CHANNELS + j];
+						sample_result = (sample * fade_value);
+						buf[j][i] = sample_result;
+					} else {
+						buf[j][i] = tbuf[i*CHANNELS + j];
+					}
+				}
+				if(data->fading) {
+					data->faded_samples += 1;
 				}
 			}
 			toread -= res;
 		}
 	}
-
+	if((data->fading == 1) || (data->fading == 4)) {
+		XMMS_DBG ("An example sample %f was faded by %fdb or %f of value resulting in a sample of %f faded samples at this time is %d", sample, (xmms_samplefloat_t)(fade_per_sample * data->faded_samples), fade_value, sample_result, data->faded_samples);
+	}
 	/* fill rest of buffer with silence */
 	for (i = frames - toread; i < frames; i++) {
 		for (j = 0; j < CHANNELS; j++) {
