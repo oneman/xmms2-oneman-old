@@ -442,9 +442,9 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 								}
 							
 								if(data->seeking == 1) { sample = tbuf[i*CHANNELS + j];} 
-								if(data->seeking == 2) { sample = data->next[i*CHANNELS + j];} 
-								if(data->seeking == 3) { sample = data->next[i*CHANNELS + j];} 
-								if(data->seeking == 4) { sample = data->next[i*CHANNELS + j];} 
+								if(data->seeking == 2) { sample = data->next2[i*CHANNELS + j];} 
+								if(data->seeking == 3) { sample = data->next3[i*CHANNELS + j];} 
+								if(data->seeking == 4) { sample = data->next4[i*CHANNELS + j];} 
 								sample_result = (sample * fade_value);
 								buf[j][i] = sample_result;
 							} else {
