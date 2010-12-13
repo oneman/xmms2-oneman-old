@@ -94,7 +94,7 @@ xmms_jack_plugin_setup (xmms_output_plugin_t *plugin)
 	xmms_output_plugin_config_property_register (plugin, "clientname", "XMMS2",
 	                                             NULL, NULL);
 
-	xmms_output_plugin_config_property_register (plugin, "fading_time_ms", "90",
+	xmms_output_plugin_config_property_register (plugin, "fading_time_ms", "150",
 	                                             NULL, NULL);
 
 	xmms_output_plugin_config_property_register (plugin, "connect_to_phys_on_startup", "1",
@@ -318,7 +318,7 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 	}
 
 	xmms_samplefloat_t fade_per_sample = -144.0f / data->fade_samples;
-	xmms_samplefloat_t fade_per_sample_seek = -22.0f / 1024.0f;
+	xmms_samplefloat_t fade_per_sample_seek = -70.0f / 1024.0f;
 	xmms_samplefloat_t sample;
 	xmms_samplefloat_t sample_result;
 	xmms_samplefloat_t fade_value;
