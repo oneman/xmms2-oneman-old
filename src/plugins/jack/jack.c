@@ -40,9 +40,12 @@ typedef struct xmms_jack_data_St {
 	gint chunksiz;
 	gboolean error;
 	gboolean running;
+	gint status;
 	gint fade_samples;
 	gint faded_samples;
 	gint fading;
+	gint fade_db_range;
+	gint connect_to_phys_on_startup;
 } xmms_jack_data_t;
 
 
@@ -60,6 +63,9 @@ static void xmms_jack_flush (xmms_output_t *output);
 static int xmms_jack_process (jack_nframes_t frames, void *arg);
 static void xmms_jack_shutdown (void *arg);
 static void xmms_jack_error (const gchar *desc);
+
+static gboolean xmms_jack_ports_connected (xmms_jack_data_t *data);
+static gboolean xmms_jack_connect_ports (xmms_jack_data_t *data);
 
 
 /*
@@ -88,26 +94,15 @@ xmms_jack_plugin_setup (xmms_output_plugin_t *plugin)
 	xmms_output_plugin_config_property_register (plugin, "clientname", "XMMS2",
 	                                             NULL, NULL);
 
-	xmms_output_plugin_config_property_register (plugin, "fade_out_on_pause_and_stop", "1",
+	xmms_output_plugin_config_property_register (plugin, "fading_time_ms", "100",
 	                                             NULL, NULL);
 
-	xmms_output_plugin_config_property_register (plugin, "fade_in_on_play", "1",
+	xmms_output_plugin_config_property_register (plugin, "fade_db_range", "90",
 	                                             NULL, NULL);
 
-	xmms_output_plugin_config_property_register (plugin, "fade_on_seek", "1",
+	xmms_output_plugin_config_property_register (plugin, "connect_to_phys_on_startup", "1",
 	                                             NULL, NULL);
 
-	xmms_output_plugin_config_property_register (plugin, "fading_time_ms", "41166",
-	                                             NULL, NULL);
-
-	xmms_output_plugin_config_property_register (plugin, "fade_db_range", "144",
-	                                             NULL, NULL);
-/*
-
-* Need to make connecttion to what and when configable
-	xmms_output_plugin_config_property_register (plugin, "connect_on_startup", "1",
-	                                             NULL, NULL);
-*/
 	jack_set_error_function (xmms_jack_error);
 
 	return TRUE;
@@ -166,12 +161,22 @@ xmms_jack_new (xmms_output_t *output)
 {
 	xmms_jack_data_t *data;
 	const xmms_config_property_t *cv;
+	int fading_time_ms;
 
 	g_return_val_if_fail (output, FALSE);
 	data = g_new0 (xmms_jack_data_t, 1);
 
 	cv = xmms_output_config_lookup (output, "fading_time_ms");
-	data->fade_samples = xmms_config_property_get_int (cv);
+	fading_time_ms = xmms_config_property_get_int (cv);
+
+	cv = xmms_output_config_lookup (output, "fade_db_range");
+	data->fade_db_range = xmms_config_property_get_int (cv);
+
+	cv = xmms_output_config_lookup (output, "connect_to_phys_on_startup");
+	data->connect_to_phys_on_startup = xmms_config_property_get_int (cv);
+
+	if (data->fade_db_range > 144) data->fade_db_range = 144;
+
 	data->faded_samples = 0;
 	data->fading = 2;
 	data->running = FALSE;
@@ -181,6 +186,16 @@ xmms_jack_new (xmms_output_t *output)
 	if (!xmms_jack_connect (output, data)) {
 		return FALSE;
 	}
+
+	if(data->connect_to_phys_on_startup) {
+
+		if (!xmms_jack_ports_connected (data) && !xmms_jack_connect_ports (data)) {
+			return FALSE;
+		}	
+	}
+
+	data->fade_samples = ((fading_time_ms * ((float)jack_get_sample_rate (data->jack) / 1000.0)) - 100);
+	XMMS_DBG ("Fade Samples is %d", data->fade_samples);
 
 	xmms_output_format_add (output, XMMS_SAMPLE_FORMAT_FLOAT, CHANNELS,
 	                        jack_get_sample_rate (data->jack));
@@ -261,10 +276,8 @@ xmms_jack_status (xmms_output_t *output, xmms_playback_status_t status)
 		return FALSE;
 	}
 
-/*	if (!xmms_jack_ports_connected (data) && !xmms_jack_connect_ports (data)) {
-		return FALSE;
-	}
-*/
+	XMMS_DBG ("I got a status: %d", status);
+	data->status = status;
 
 	if (status == 666) {
 		XMMS_DBG ("I got Seeked!");
@@ -310,52 +323,57 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 		buf[i] = jack_port_get_buffer (data->ports[i], frames);
 	}
 
-	xmms_samplefloat_t fade_per_sample = -90.0f / (xmms_samplefloat_t)data->fade_samples;
+	xmms_samplefloat_t fade_per_sample = ((data->fade_db_range - 10) * -1.0f) / (xmms_samplefloat_t)data->fade_samples;
 	xmms_samplefloat_t sample;
 	xmms_samplefloat_t sample_result;
 	xmms_samplefloat_t fade_value;
+
 	toread = frames;
 
-	if((TRUE) && (data->running == FALSE) && ((data->faded_samples <= data->fade_samples) && (data->fading == 0))){
+	if((data->status != 0) && (data->running == FALSE) && ((data->faded_samples <= data->fade_samples) && (data->fading == 0))){
 			data->fading = 1;
 		XMMS_DBG ("Fade Begin");
 
 	}
 
-	if((TRUE) && (data->running == FALSE) && ((data->faded_samples >= data->fade_samples) && (data->fading == 1))){
+	if((data->running == FALSE) && ((data->faded_samples >= data->fade_samples) && (data->fading == 1))){
 			data->fading = 2;
 		XMMS_DBG ("Fade Complete");
 
 	}
 
-	if((TRUE) && (data->running == TRUE) && (data->fading == 2)){
+	if (data->status == 0) {
+			data->fading = 3;
+	}
+
+	if((data->running == TRUE) && (data->fading == 2)){
 			data->fading = 0;
 			data->faded_samples = 0;
 		XMMS_DBG ("Fade Reset");
 
 	}
 
-	if((TRUE) && (data->running == FALSE) && (data->fading == 2)){
+	if((data->running == FALSE) && (data->fading == 2)){
 			data->fading = 3;
 			data->faded_samples = 0;
 		  XMMS_DBG ("Fade In Preped");
 
 	}
 
-	if((TRUE) && (data->running == TRUE) && (data->fading == 3)){
+	if((data->running == TRUE) && (data->fading == 3)){
 			data->fading = 4;
 		  XMMS_DBG ("Fade In Begin");
 
 	}
 
-	if((TRUE) && (data->running == TRUE) && ((data->faded_samples >= data->fade_samples) && (data->fading == 4))){
+	if((data->running == TRUE) && ((data->faded_samples >= data->fade_samples) && (data->fading == 4))){
 			data->fading = 2;
 		XMMS_DBG ("Fade In Complete");
 
 	}
 
 
-	if ((data->running) || ((TRUE) && (data->fading == 1)) || ((TRUE) && (data->fading == 4))) {
+	if ((data->running) || (data->fading == 1) || (data->fading == 4)) {
 
 		while (toread) {
 			gint t;
