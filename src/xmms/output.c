@@ -411,6 +411,7 @@ xmms_output_filler (void *arg)
 			continue;
 		}
 		if (output->filler_state == FILLER_SEEK) {
+xmms_output_plugin_method_status(output->plugin, output, 666); // hacky hacky
 			if (!chain) {
 				XMMS_DBG ("Seek without chain, ignoring..");
 				output->filler_state = FILLER_STOP;
@@ -434,8 +435,8 @@ xmms_output_filler (void *arg)
 
 				xmms_ringbuf_clear (output->filler_buffer);
 
-// hacky hacky
-xmms_output_plugin_method_status(output->plugin, output, 666);
+
+
 
 				xmms_ringbuf_hotspot_set (output->filler_buffer, seek_done, NULL, output);
 			}

@@ -44,6 +44,7 @@ typedef struct xmms_jack_data_St {
 	xmms_samplefloat_t fade_samples;
 	xmms_samplefloat_t faded_samples;
 	gint fading;
+	gint seeking;
 	gint connect_to_phys_on_startup;
 } xmms_jack_data_t;
 
@@ -168,6 +169,7 @@ xmms_jack_new (xmms_output_t *output)
 	cv = xmms_output_config_lookup (output, "connect_to_phys_on_startup");
 	data->connect_to_phys_on_startup = xmms_config_property_get_int (cv);
 
+	data->seeking = 0;
 	data->faded_samples = 0;
 	data->fading = 2;
 	data->running = FALSE;
@@ -272,6 +274,7 @@ xmms_jack_status (xmms_output_t *output, xmms_playback_status_t status)
 
 	if (status == 666) {
 		XMMS_DBG ("I got Seeked!");
+	  data->seeking = 1;
 		return TRUE;
 	}
 
@@ -315,6 +318,7 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 	}
 
 	xmms_samplefloat_t fade_per_sample = -144.0f / data->fade_samples;
+	xmms_samplefloat_t fade_per_sample_seek = -22.0f / 1024.0f;
 	xmms_samplefloat_t sample;
 	xmms_samplefloat_t sample_result;
 	xmms_samplefloat_t fade_value;
@@ -367,6 +371,7 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 	if ((data->running) || (data->fading == 1) || (data->fading == 4)) {
 
 		while (toread) {
+
 			gint t;
 
 			t = MIN (toread * CHANNELS * sizeof (xmms_samplefloat_t),
@@ -387,7 +392,7 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 			res /= CHANNELS * sizeof (xmms_samplefloat_t);
 			for (i = 0; i < res; i++) {
 				for (j = 0; j < CHANNELS; j++) {
-					if((data->fading) && (data->faded_samples <= data->fade_samples)){
+					if((data->fading) && (data->faded_samples <= data->fade_samples) && (data->seeking == 0)){
 						if(data->fading == 1) {
 							fade_value = (xmms_samplefloat_t)(db_to_value(fade_per_sample * data->faded_samples));
 						}
@@ -399,7 +404,19 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 						buf[j][i] = sample_result;
 					} else {
 						if(data->running == TRUE) {
-							buf[j][i] = tbuf[i*CHANNELS + j];
+							if(data->seeking) {
+							 if(data->seeking < 2) {
+							  	fade_value = (xmms_samplefloat_t)(db_to_value(fade_per_sample_seek * data->faded_samples));
+								} else {
+									//fade_value = (xmms_samplefloat_t)(db_to_value(fade_per_sample_seek * (1024.0f - data->faded_samples)));
+									buf[j][i] = 0.0;
+								}
+								sample = tbuf[i*CHANNELS + j];
+								sample_result = (sample * fade_value);
+								buf[j][i] = sample_result;
+							} else {
+								buf[j][i] = tbuf[i*CHANNELS + j];
+							}
 						} else {
 							buf[j][i] = 0.0;
 						}
@@ -411,10 +428,26 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 				if(data->fading == 4) {
 					data->faded_samples += 1;
 				}
+				if(data->seeking > 0) {
+					data->faded_samples += 1;
+				}
 			}
 			toread -= res;
 		}
 	}
+
+	if((data->seeking < 2) && (data->seeking > 0)) {
+		data->seeking += 1;
+		data->faded_samples = 0;
+	}
+
+	if(data->seeking == 2) {
+    XMMS_DBG ("seeked with %f", fade_per_sample_seek);
+		data->faded_samples = 0;
+		data->seeking = 0;
+		data->fading = 4;
+	}
+
 	if((data->fading == 1) || (data->fading == 4)) {
 		XMMS_DBG ("An example sample %f was faded by %fdb or %f of value resulting in a sample of %f faded samples at this time is %f", sample, fade_per_sample * data->faded_samples, fade_per_sample * ((data->fade_samples - data->faded_samples)), sample_result, data->faded_samples);
 	}
