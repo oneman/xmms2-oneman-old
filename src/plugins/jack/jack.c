@@ -58,8 +58,27 @@ typedef struct xmms_jack_data_St {
 	xmms_samplefloat_t next13[CHANNELS*1024];
 	xmms_samplefloat_t next14[CHANNELS*1024];
 	xmms_samplefloat_t next15[CHANNELS*1024];
+
+	xmms_samplefloat_t jnext[CHANNELS*1024];
+	xmms_samplefloat_t jnext1[CHANNELS*1024];
+	xmms_samplefloat_t jnext2[CHANNELS*1024];
+	xmms_samplefloat_t jnext3[CHANNELS*1024];
+	xmms_samplefloat_t jnext4[CHANNELS*1024];
+	xmms_samplefloat_t jnext5[CHANNELS*1024];
+	xmms_samplefloat_t jnext6[CHANNELS*1024];
+	xmms_samplefloat_t jnext7[CHANNELS*1024];
+	xmms_samplefloat_t jnext8[CHANNELS*1024];
+	xmms_samplefloat_t jnext9[CHANNELS*1024];
+	xmms_samplefloat_t jnext10[CHANNELS*1024];
+	xmms_samplefloat_t jnext11[CHANNELS*1024];
+	xmms_samplefloat_t jnext12[CHANNELS*1024];
+	xmms_samplefloat_t jnext13[CHANNELS*1024];
+	xmms_samplefloat_t jnext14[CHANNELS*1024];
+	xmms_samplefloat_t jnext15[CHANNELS*1024];
+
 	float xfade_pos;
 	gint fading;
+	gint superevil;
 	gint seeking;
 	gint connect_to_phys_on_startup;
 } xmms_jack_data_t;
@@ -185,6 +204,7 @@ xmms_jack_new (xmms_output_t *output)
 	cv = xmms_output_config_lookup (output, "connect_to_phys_on_startup");
 	data->connect_to_phys_on_startup = xmms_config_property_get_int (cv);
 
+	data->superevil = 0;
 	data->seeking = 0;
 	data->faded_samples = 0;
 	data->fading = 2;
@@ -295,6 +315,48 @@ xmms_jack_status (xmms_output_t *output, xmms_playback_status_t status)
 		return TRUE;
 	}
 
+
+	if (status == 777) {
+		XMMS_DBG ("I am up to eveil!");
+
+				gint t = 8192;
+				if(true) { 
+						if ((output_is_ready_for_period(output, t * 16) == 0)) {	
+					  	//XMMS_DBG ("output is totally ready");
+					  	//xmms_output_evil_read (output, (gchar *)tbuf, t, 1);
+							xmms_output_eviler_read (output, (gchar *)data->jnext, t, 1);
+							xmms_output_eviler_read (output, (gchar *)data->jnext2, t, 2);
+							xmms_output_eviler_read (output, (gchar *)data->jnext2, t, 2);
+							xmms_output_eviler_read (output, (gchar *)data->jnext3, t, 2);
+							xmms_output_eviler_read (output, (gchar *)data->jnext4, t, 2);
+							xmms_output_eviler_read (output, (gchar *)data->jnext5, t, 2);
+							xmms_output_eviler_read (output, (gchar *)data->jnext6, t, 2);
+							xmms_output_eviler_read (output, (gchar *)data->jnext7, t, 2);
+							xmms_output_eviler_read (output, (gchar *)data->jnext8, t, 2);
+							xmms_output_eviler_read (output, (gchar *)data->jnext9, t, 2);
+							xmms_output_eviler_read (output, (gchar *)data->jnext10, t, 2);
+							xmms_output_eviler_read (output, (gchar *)data->jnext11, t, 2);
+							xmms_output_eviler_read (output, (gchar *)data->jnext12, t, 2);
+							xmms_output_eviler_read (output, (gchar *)data->jnext13, t, 2);
+							xmms_output_eviler_read (output, (gchar *)data->jnext14, t, 2);
+							xmms_output_eviler_read (output, (gchar *)data->jnext15, t, 0);
+						//XMMS_DBG ("res4 is was %d", res4);
+						} else {
+							xmms_log_info ("Not Enough Bits in the Ring Buffer to seek 16x"); 
+							data->seeking = 0;
+
+							//break;
+						}
+				}
+
+		XMMS_DBG ("yeass eveil!");
+		data->seeking = 1;
+		data->superevil = 1;
+		return TRUE;
+	}
+
+
+
 	if (status == XMMS_PLAYBACK_STATUS_PLAY) {
 		data->running = TRUE;
 	} else {
@@ -309,6 +371,11 @@ static void
 xmms_jack_flush (xmms_output_t *output)
 {
 	/* do nothing... */
+
+		XMMS_DBG ("I got flushed!!");
+
+
+
 }
 
 float db_to_value(float db)
@@ -411,6 +478,7 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 
 			if (data->seeking == 1) {
 				if(lots_of_fade_seeking) { 
+					if(data->superevil == 0) {
 						if ((output_is_ready_for_period(output, t * 16) == 0)) {	
 					  	//XMMS_DBG ("output is totally ready");
 					  	res1 = xmms_output_evil_read (output, (gchar *)tbuf, t, 1);
@@ -435,6 +503,7 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 							data->seeking = 0;
 							break;
 						}
+					}
 				} else {
 					if ((output_is_ready_for_period(output, t * 4) == 0)) {	
 					  //XMMS_DBG ("output is totally ready");
@@ -509,23 +578,52 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
       							coefA = 1.0f - coefB;
 										
 										if(lots_of_fade_seeking) {
-											if (data->seeking == 1) { sample = tbuf[i*CHANNELS + j]; } 
-											if (data->seeking == 2) { sample = data->next[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB;  } 
-											if (data->seeking == 3) { sample = data->next2[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
-											if (data->seeking == 4) { sample = data->next3[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; }
-											if (data->seeking == 5) { sample = data->next4[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
-											if (data->seeking == 6) { sample = data->next5[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
-											if (data->seeking == 7) { sample = data->next6[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
-											if (data->seeking == 8) { sample = data->next7[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
-											if (data->seeking == 9) { sample = data->next8[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
-											if (data->seeking == 10) { sample = data->next9[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
-											if (data->seeking == 11) { sample = data->next10[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
-											if (data->seeking == 12) { sample = data->next11[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
-											if (data->seeking == 13) { sample = data->next12[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
-											if (data->seeking == 14) { sample = data->next13[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
-											if (data->seeking == 15) { sample = data->next14[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
-											if (data->seeking == 16) { sample = data->next15[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; }  
-											sample_result = sample;
+											if (data->superevil) { 
+
+											//	if (data->seeking == 1) { sample = data->jnext[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB;  } 
+											//	if (data->seeking == 2) { sample = data->jnext1[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB;  } 
+											//	if (data->seeking == 3) { sample = data->jnext2[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+										//		if (data->seeking == 4) { sample = data->jnext3[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; }
+
+												if (data->seeking == 1) { sample = data->jnext[i*CHANNELS + j];  } 
+												if (data->seeking == 2) { sample = data->jnext1[i*CHANNELS + j];  } 
+												if (data->seeking == 3) { sample = data->jnext2[i*CHANNELS + j]; } 
+												if (data->seeking == 4) { sample = data->jnext3[i*CHANNELS + j]; }
+
+												if (data->seeking == 5) { sample = data->jnext4[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 6) { sample = data->jnext5[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 7) { sample = data->jnext6[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 8) { sample = data->jnext7[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 9) { sample = data->jnext8[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 10) { sample = data->jnext9[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 11) { sample = data->jnext10[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 12) { sample = data->jnext11[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 13) { sample = data->jnext12[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 14) { sample = data->jnext13[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 15) { sample = data->jnext14[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 16) { sample = data->jnext15[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; }  
+												sample_result = sample;
+
+
+											} else {
+												if (data->seeking == 1) { sample = tbuf[i*CHANNELS + j]; } 
+												if (data->seeking == 2) { sample = data->next[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB;  } 
+												if (data->seeking == 3) { sample = data->next2[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 4) { sample = data->next3[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; }
+												if (data->seeking == 5) { sample = data->next4[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 6) { sample = data->next5[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 7) { sample = data->next6[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 8) { sample = data->next7[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 9) { sample = data->next8[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 10) { sample = data->next9[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 11) { sample = data->next10[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 12) { sample = data->next11[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 13) { sample = data->next12[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 14) { sample = data->next13[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 15) { sample = data->next14[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+												if (data->seeking == 16) { sample = data->next15[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; }  
+												sample_result = sample;
+											}
 										} else { 
 											if (data->seeking == 1) { sample = tbuf[i*CHANNELS + j]; } 
 											if (data->seeking == 2) { sample = data->next[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB;  } 
@@ -571,7 +669,13 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 				//if (((data->seeking == 3) || (data->seeking == 4)) && (crossfade_seek) && (crossfade_seek_style2)) {
 					//data->xfade_pos += 0.0009760;  for 2048 samples
 					//data->xfade_pos += 0.0006510; // for 3072
-					data->xfade_pos += 0.00012207; // for 16384
+					if(data->superevil) {
+            if (data->seeking > 4) {
+							data->xfade_pos += 0.00016266; // for 12288
+						}
+					} else {
+						data->xfade_pos += 0.00012207; // for 16384
+          }
 				}
 			}
 			toread -= res;
@@ -589,6 +693,8 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 		data->seeking = 0;
 		if(crossfade_seek == 0)
 			data->fading = 4;
+		if(data->superevil == 1)
+			data->superevil = 0;
 		if((crossfade_seek == 1) && (crossfade_seek_style2)) {
 			data->xfade_pos = -1.0;
 		}

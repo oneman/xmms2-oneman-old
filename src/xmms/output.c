@@ -295,7 +295,7 @@ song_changed (void *data)
 	xmms_output_song_changed_arg_t *arg = (xmms_output_song_changed_arg_t *)data;
 	xmms_medialib_entry_t entry;
 	xmms_stream_type_t *type;
-
+	//xmms_output_plugin_method_status(arg->output->plugin, arg->output, 666); 
 	entry = xmms_xform_entry_get (arg->chain);
 
 	XMMS_DBG ("Running hotspot! Song changed!! %d", entry);
@@ -351,6 +351,8 @@ xmms_output_filler_state_nolock (xmms_output_t *output, xmms_output_filler_state
 	output->filler_state = state;
 	g_cond_signal (output->filler_state_cond);
 	if (state == FILLER_QUIT || state == FILLER_STOP || state == FILLER_KILL) {
+    	xmms_output_plugin_method_status(output->plugin, output, 777); 
+				XMMS_DBG ("it was me i killed it!");
 		xmms_ringbuf_clear (output->filler_buffer);
 	}
 	if (state != FILLER_STOP) {
@@ -400,6 +402,7 @@ xmms_output_filler (void *arg)
 			continue;
 		}
 		if (output->filler_state == FILLER_KILL) {
+
 			if (chain) {
 				xmms_object_unref (chain);
 				chain = NULL;
@@ -444,6 +447,7 @@ xmms_output_filler (void *arg)
 		}
 
 		if (!chain) {
+	//xmms_output_plugin_method_status(output->plugin, output, 666); 
 			xmms_medialib_entry_t entry;
 			xmms_output_song_changed_arg_t *hsarg;
 			xmms_medialib_session_t *session;
@@ -494,6 +498,7 @@ xmms_output_filler (void *arg)
 
 		if (output->filler_state != FILLER_RUN) {
 			XMMS_DBG ("State changed while waiting...");
+
 			continue;
 		}
 		g_mutex_unlock (output->filler_mutex);
@@ -646,6 +651,50 @@ xmms_output_evil_read (xmms_output_t *output, char *buffer, gint len, gint lock)
 		return -1;
 	}
 	if(lock == 0) g_mutex_unlock (output->filler_mutex);
+
+	//update_playtime (output, ret);
+
+	if (ret < len) {
+		XMMS_DBG ("Underrun %d of %d (%d)", ret, len, xmms_sample_frame_size_get (output->format));
+
+		if ((ret % xmms_sample_frame_size_get (output->format)) != 0) {
+			xmms_log_error ("***********************************");
+			xmms_log_error ("* Read non-multiple of sample size,");
+			xmms_log_error ("*  you probably hear noise now :)");
+			xmms_log_error ("***********************************");
+		}
+		output->buffer_underruns++;
+	}
+
+	//output->bytes_written += ret;
+
+	return ret;
+}
+
+
+gint
+xmms_output_eviler_read (xmms_output_t *output, char *buffer, gint len, gint lock)
+{
+	gint ret;
+	gint letloose;
+	xmms_error_t err;
+  if(lock == 1) letloose = 0;
+  if(lock == 0) letloose = 1;
+	xmms_error_reset (&err);
+
+	g_return_val_if_fail (output, -1);
+	g_return_val_if_fail (buffer, -1);
+
+	//if(lock == 1) g_mutex_lock (output->filler_mutex);
+	//xmms_ringbuf_wait_used (output->filler_buffer, len, output->filler_mutex);
+	ret = xmms_ringbuf_evil_read (output->filler_buffer, buffer, len, 0);
+	if (ret == 0 && xmms_ringbuf_iseos (output->filler_buffer)) {
+		XMMS_DBG ("fucksocked");
+		xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_STOP);
+		g_mutex_unlock (output->filler_mutex);
+		return -1;
+	}
+	//if(lock == 0) g_mutex_unlock (output->filler_mutex);
 
 	//update_playtime (output, ret);
 
