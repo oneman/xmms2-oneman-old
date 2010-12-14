@@ -46,6 +46,18 @@ typedef struct xmms_jack_data_St {
 	xmms_samplefloat_t next[CHANNELS*1024];
 	xmms_samplefloat_t next2[CHANNELS*1024];
 	xmms_samplefloat_t next3[CHANNELS*1024];
+	xmms_samplefloat_t next4[CHANNELS*1024];
+	xmms_samplefloat_t next5[CHANNELS*1024];
+	xmms_samplefloat_t next6[CHANNELS*1024];
+	xmms_samplefloat_t next7[CHANNELS*1024];
+	xmms_samplefloat_t next8[CHANNELS*1024];
+	xmms_samplefloat_t next9[CHANNELS*1024];
+	xmms_samplefloat_t next10[CHANNELS*1024];
+	xmms_samplefloat_t next11[CHANNELS*1024];
+	xmms_samplefloat_t next12[CHANNELS*1024];
+	xmms_samplefloat_t next13[CHANNELS*1024];
+	xmms_samplefloat_t next14[CHANNELS*1024];
+	xmms_samplefloat_t next15[CHANNELS*1024];
 	float xfade_pos;
 	gint fading;
 	gint seeking;
@@ -329,6 +341,7 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 	xmms_samplefloat_t fade_value;
 	int crossfade_seek = 1;
 	int crossfade_seek_style2 = 1;
+	int lots_of_fade_seeking = 1;
 
 	float coefB;
 	float coefA;
@@ -397,20 +410,45 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 			}
 
 			if (data->seeking == 1) {
-
-				if ((output_is_ready_for_period(output, t * 4) == 0)) {
-				  //XMMS_DBG ("output is totally ready");
-				  res1 = xmms_output_evil_read (output, (gchar *)tbuf, t, 1);
-					res2 = xmms_output_evil_read (output, (gchar *)data->next, t, 2);
-					res3 = xmms_output_evil_read (output, (gchar *)data->next2, t, 2);
-					res4 = xmms_output_evil_read (output, (gchar *)data->next3, t, 0);
-					//XMMS_DBG ("res4 is was %d", res4);
+				if(lots_of_fade_seeking) { 
+						if ((output_is_ready_for_period(output, t * 16) == 0)) {	
+					  	//XMMS_DBG ("output is totally ready");
+					  	res1 = xmms_output_evil_read (output, (gchar *)tbuf, t, 1);
+							res2 = xmms_output_evil_read (output, (gchar *)data->next, t, 2);
+							res3 = xmms_output_evil_read (output, (gchar *)data->next2, t, 2);
+							res3 = xmms_output_evil_read (output, (gchar *)data->next3, t, 2);
+							res3 = xmms_output_evil_read (output, (gchar *)data->next4, t, 2);
+							res3 = xmms_output_evil_read (output, (gchar *)data->next5, t, 2);
+							res3 = xmms_output_evil_read (output, (gchar *)data->next6, t, 2);
+							res3 = xmms_output_evil_read (output, (gchar *)data->next7, t, 2);
+							res3 = xmms_output_evil_read (output, (gchar *)data->next8, t, 2);
+							res3 = xmms_output_evil_read (output, (gchar *)data->next9, t, 2);
+							res3 = xmms_output_evil_read (output, (gchar *)data->next10, t, 2);
+							res3 = xmms_output_evil_read (output, (gchar *)data->next11, t, 2);
+							res3 = xmms_output_evil_read (output, (gchar *)data->next12, t, 2);
+							res3 = xmms_output_evil_read (output, (gchar *)data->next13, t, 2);
+							res3 = xmms_output_evil_read (output, (gchar *)data->next14, t, 2);
+							res4 = xmms_output_evil_read (output, (gchar *)data->next15, t, 0);
+						//XMMS_DBG ("res4 is was %d", res4);
+						} else {
+							xmms_log_info ("Not Enough Bits in the Ring Buffer to seek 16x"); 
+							data->seeking = 0;
+							break;
+						}
 				} else {
-						xmms_log_info ("Not Enough Bits in the Ring Buffer to seek 4x"); 
-						data->seeking = 0;
-						break;
+					if ((output_is_ready_for_period(output, t * 4) == 0)) {	
+					  //XMMS_DBG ("output is totally ready");
+					  res1 = xmms_output_evil_read (output, (gchar *)tbuf, t, 1);
+						res2 = xmms_output_evil_read (output, (gchar *)data->next, t, 2);
+						res3 = xmms_output_evil_read (output, (gchar *)data->next2, t, 2);
+						res4 = xmms_output_evil_read (output, (gchar *)data->next3, t, 0);
+						//XMMS_DBG ("res4 is was %d", res4);
+					} else {
+							xmms_log_info ("Not Enough Bits in the Ring Buffer to seek 4x"); 
+							data->seeking = 0;
+							break;
+					}
 				}
-
 			}
 
 			if ((data->seeking == 0) && (res <= 0)) {
@@ -469,12 +507,32 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 
  										coefB = (data->xfade_pos + 1.0f) * 0.5f;
       							coefA = 1.0f - coefB;
-
-										if (data->seeking == 1) { sample = tbuf[i*CHANNELS + j]; } 
-										if (data->seeking == 2) { sample = data->next[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB;  } 
-										if (data->seeking == 3) { sample = data->next2[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
-										if (data->seeking == 4) { sample = data->next3[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
-										sample_result = sample;
+										
+										if(lots_of_fade_seeking) {
+											if (data->seeking == 1) { sample = tbuf[i*CHANNELS + j]; } 
+											if (data->seeking == 2) { sample = data->next[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB;  } 
+											if (data->seeking == 3) { sample = data->next2[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+											if (data->seeking == 4) { sample = data->next3[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; }
+											if (data->seeking == 5) { sample = data->next4[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+											if (data->seeking == 6) { sample = data->next5[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+											if (data->seeking == 7) { sample = data->next6[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+											if (data->seeking == 8) { sample = data->next7[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+											if (data->seeking == 9) { sample = data->next8[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+											if (data->seeking == 10) { sample = data->next9[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+											if (data->seeking == 11) { sample = data->next10[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+											if (data->seeking == 12) { sample = data->next11[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+											if (data->seeking == 13) { sample = data->next12[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+											if (data->seeking == 14) { sample = data->next13[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+											if (data->seeking == 15) { sample = data->next14[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+											if (data->seeking == 16) { sample = data->next15[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; }  
+											sample_result = sample;
+										} else { 
+											if (data->seeking == 1) { sample = tbuf[i*CHANNELS + j]; } 
+											if (data->seeking == 2) { sample = data->next[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB;  } 
+											if (data->seeking == 3) { sample = data->next2[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+											if (data->seeking == 4) { sample = data->next3[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+											sample_result = sample;
+										}
 									} else {
 										if (data->seeking == 1) { sample = tbuf[i*CHANNELS + j]; } 
 										if (data->seeking == 2) { sample = data->next[i*CHANNELS + j]; } 
@@ -508,22 +566,24 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 				if(data->seeking > 0) {
 					data->faded_samples += 1;
 				}
-				if (((data->seeking == 2) || (data->seeking == 3) || (data->seeking == 4)) && (crossfade_seek) && (crossfade_seek_style2)) {
+				if (((data->seeking > 1)) && (crossfade_seek) && (crossfade_seek_style2)) {
+				//if (((data->seeking == 2) || (data->seeking == 3) || (data->seeking == 4)) && (crossfade_seek) && (crossfade_seek_style2)) {
 				//if (((data->seeking == 3) || (data->seeking == 4)) && (crossfade_seek) && (crossfade_seek_style2)) {
 					//data->xfade_pos += 0.0009760;  for 2048 samples
-					data->xfade_pos += 0.0006510; // for 3072
+					//data->xfade_pos += 0.0006510; // for 3072
+					data->xfade_pos += 0.00012207; // for 16384
 				}
 			}
 			toread -= res;
 		}
 	}
 
-	if((data->seeking < 5) && (data->seeking > 0)) {
+	if((data->seeking < 666) && (data->seeking > 0)) {
 		data->seeking += 1;
 		//data->faded_samples = 0;
 	}
 
-	if(data->seeking == 5) {
+	if (((data->seeking == 5) && (lots_of_fade_seeking == 0)) || ((lots_of_fade_seeking == 1 ) && (data->seeking == 17) )) {
     //XMMS_DBG ("seeked with %f", fade_per_sample_seek);
 		data->faded_samples = 0;
 		data->seeking = 0;
