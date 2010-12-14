@@ -325,7 +325,7 @@ xmms_jack_status (xmms_output_t *output, xmms_playback_status_t status)
 					  	//XMMS_DBG ("output is totally ready");
 					  	//xmms_output_evil_read (output, (gchar *)tbuf, t, 1);
 							xmms_output_eviler_read (output, (gchar *)data->jnext, t, 1);
-							xmms_output_eviler_read (output, (gchar *)data->jnext2, t, 2);
+							xmms_output_eviler_read (output, (gchar *)data->jnext1, t, 2);
 							xmms_output_eviler_read (output, (gchar *)data->jnext2, t, 2);
 							xmms_output_eviler_read (output, (gchar *)data->jnext3, t, 2);
 							xmms_output_eviler_read (output, (gchar *)data->jnext4, t, 2);
