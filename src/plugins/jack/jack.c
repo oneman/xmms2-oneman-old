@@ -534,7 +534,12 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 				  res = xmms_output_read (output, (gchar *)tbuf, t);
         } else {
 					xmms_log_info ("Not Enough Bits in the Ring Buffer, its going to be a silent period..."); 
-					break;
+          if(data->superevil == 0) {
+						break;
+					}
+          if((data->superevil == 1) && (data->seeking > 4)){
+						break;
+					}
 				}
 			}
 
@@ -543,7 +548,9 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 				  res = xmms_output_read (output, (gchar *)tbuf, t);
         } else {
 					xmms_log_info ("Not Enough Bits in the Ring Buffer, its going to be a silent period for seek style 2..."); 
-					break;
+          if(data->superevil == 0) {
+						break;
+					}
 				}
 			}
 
