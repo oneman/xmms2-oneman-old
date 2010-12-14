@@ -46,6 +46,7 @@ typedef struct xmms_jack_data_St {
 	xmms_samplefloat_t next[CHANNELS*1024];
 	xmms_samplefloat_t next2[CHANNELS*1024];
 	xmms_samplefloat_t next3[CHANNELS*1024];
+	float xfade_pos;
 	gint fading;
 	gint seeking;
 	gint connect_to_phys_on_startup;
@@ -176,6 +177,7 @@ xmms_jack_new (xmms_output_t *output)
 	data->faded_samples = 0;
 	data->fading = 2;
 	data->running = FALSE;
+	data->xfade_pos = -1.0;
 
 	xmms_output_private_data_set (output, data);
 
@@ -326,6 +328,10 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 	xmms_samplefloat_t sample_result;
 	xmms_samplefloat_t fade_value;
 	int crossfade_seek = 1;
+	int crossfade_seek_style2 = 1;
+
+	float coefB;
+	float coefA;
 
 	toread = frames;
 
@@ -451,11 +457,23 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 								}
 
 								if (crossfade_seek) {
-									if (data->seeking == 1) { sample = tbuf[i*CHANNELS + j]; } 
-									if (data->seeking == 2) { sample = data->next[i*CHANNELS + j]; } 
-									if (data->seeking == 3) { sample = ((data->next2[i*CHANNELS + j] + tbuf[i*CHANNELS + j]) / 2); } 
-									if (data->seeking == 4) { sample = ((data->next3[i*CHANNELS + j] + tbuf[i*CHANNELS + j]) / 2); } 
-									sample_result = sample;
+									if (crossfade_seek_style2) {
+
+ 										coefB = (data->xfade_pos + 1.0f) * 0.5f;
+      							coefA = 1.0f - coefB;
+
+										if (data->seeking == 1) { sample = tbuf[i*CHANNELS + j]; } 
+										if (data->seeking == 2) { sample = data->next[i*CHANNELS + j]; } 
+										if (data->seeking == 3) { sample = data->next2[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+										if (data->seeking == 4) { sample = data->next3[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
+										sample_result = sample;
+									} else {
+										if (data->seeking == 1) { sample = tbuf[i*CHANNELS + j]; } 
+										if (data->seeking == 2) { sample = data->next[i*CHANNELS + j]; } 
+										if (data->seeking == 3) { sample = ((data->next2[i*CHANNELS + j] + tbuf[i*CHANNELS + j]) / 2); } 
+										if (data->seeking == 4) { sample = ((data->next3[i*CHANNELS + j] + tbuf[i*CHANNELS + j]) / 2); } 
+										sample_result = sample;
+									}
 								} else {
 									if (data->seeking == 1) { sample = tbuf[i*CHANNELS + j]; } 
 									if (data->seeking == 2) { sample = data->next[i*CHANNELS + j]; } 
@@ -482,6 +500,9 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 				if(data->seeking > 0) {
 					data->faded_samples += 1;
 				}
+				if (((data->seeking == 3) || (data->seeking == 4)) && (crossfade_seek) && (crossfade_seek_style2)) {
+					data->xfade_pos += 0.0009760;
+				}
 			}
 			toread -= res;
 		}
@@ -498,7 +519,9 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 		data->seeking = 0;
 		if(crossfade_seek == 0)
 			data->fading = 4;
-
+		if((crossfade_seek == 1) && (crossfade_seek_style2)) {
+			data->xfade_pos = -1.0;
+		}
 	}
 
 	if((data->fading == 1) || (data->fading == 4)) {
