@@ -431,6 +431,14 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 				}
 			}
 
+			if (((data->seeking == 2) || (data->seeking == 2)) && (crossfade_seek) && (crossfade_seek_style2)) {
+        if ((output_is_ready_for_period(output, t) == 0)) {
+				  res = xmms_output_read (output, (gchar *)tbuf, t);
+        } else {
+					xmms_log_info ("Not Enough Bits in the Ring Buffer, its going to be a silent period for seek style 2..."); 
+					break;
+				}
+			}
 
 
 			res /= CHANNELS * sizeof (xmms_samplefloat_t);
@@ -463,7 +471,7 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
       							coefA = 1.0f - coefB;
 
 										if (data->seeking == 1) { sample = tbuf[i*CHANNELS + j]; } 
-										if (data->seeking == 2) { sample = data->next[i*CHANNELS + j]; } 
+										if (data->seeking == 2) { sample = data->next[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB;  } 
 										if (data->seeking == 3) { sample = data->next2[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
 										if (data->seeking == 4) { sample = data->next3[i*CHANNELS + j] * coefA + tbuf[i*CHANNELS + j] * coefB; } 
 										sample_result = sample;
@@ -500,8 +508,10 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 				if(data->seeking > 0) {
 					data->faded_samples += 1;
 				}
-				if (((data->seeking == 3) || (data->seeking == 4)) && (crossfade_seek) && (crossfade_seek_style2)) {
-					data->xfade_pos += 0.0009760;
+				if (((data->seeking == 2) || (data->seeking == 3) || (data->seeking == 4)) && (crossfade_seek) && (crossfade_seek_style2)) {
+				//if (((data->seeking == 3) || (data->seeking == 4)) && (crossfade_seek) && (crossfade_seek_style2)) {
+					//data->xfade_pos += 0.0009760;  for 2048 samples
+					data->xfade_pos += 0.0006510; // for 3072
 				}
 			}
 			toread -= res;
