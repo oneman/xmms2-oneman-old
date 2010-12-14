@@ -239,6 +239,27 @@ xmms_ringbuf_read (xmms_ringbuf_t *ringbuf, gpointer data, guint len)
 	return r;
 }
 
+guint
+xmms_ringbuf_evil_read (xmms_ringbuf_t *ringbuf, gpointer data, guint len, gint letloose)
+{
+	guint r;
+
+	g_return_val_if_fail (ringbuf, 0);
+	g_return_val_if_fail (data, 0);
+	g_return_val_if_fail (len > 0, 0);
+
+	r = read_bytes (ringbuf, (guint8 *) data, len);
+
+	ringbuf->rd_index += r;
+	ringbuf->rd_index %= ringbuf->buffer_size;
+
+	if (letloose == 1) {
+		g_cond_broadcast (ringbuf->free_cond);
+	}
+
+	return r;
+}
+
 /**
  * Same as #xmms_ringbuf_read but does not advance in the buffer after
  * the data has been read.

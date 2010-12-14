@@ -411,7 +411,7 @@ xmms_output_filler (void *arg)
 			continue;
 		}
 		if (output->filler_state == FILLER_SEEK) {
-xmms_output_plugin_method_status(output->plugin, output, 666); // hacky hacky
+
 			if (!chain) {
 				XMMS_DBG ("Seek without chain, ignoring..");
 				output->filler_state = FILLER_STOP;
@@ -533,7 +533,7 @@ xmms_output_plugin_method_status(output->plugin, output, 666); // hacky hacky
 gint
 output_is_ready_for_period(xmms_output_t *output, gint len)
 {
-
+	//XMMS_DBG ("ringbuffs got %d bytes", xmms_ringbuf_bytes_used(output->filler_buffer));
   if (xmms_ringbuf_bytes_used(output->filler_buffer) >= len) {
     return 0;
   } else {
@@ -623,6 +623,49 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 	return ret;
 }
 
+gint
+xmms_output_evil_read (xmms_output_t *output, char *buffer, gint len, gint lock)
+{
+	gint ret;
+	gint letloose;
+	xmms_error_t err;
+  if(lock == 1) letloose = 0;
+  if(lock == 0) letloose = 1;
+	xmms_error_reset (&err);
+
+	g_return_val_if_fail (output, -1);
+	g_return_val_if_fail (buffer, -1);
+
+	if(lock == 1) g_mutex_lock (output->filler_mutex);
+	//xmms_ringbuf_wait_used (output->filler_buffer, len, output->filler_mutex);
+	ret = xmms_ringbuf_evil_read (output->filler_buffer, buffer, len, letloose);
+	if (ret == 0 && xmms_ringbuf_iseos (output->filler_buffer)) {
+		XMMS_DBG ("fucksocked");
+		xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_STOP);
+		g_mutex_unlock (output->filler_mutex);
+		return -1;
+	}
+	if(lock == 0) g_mutex_unlock (output->filler_mutex);
+
+	//update_playtime (output, ret);
+
+	if (ret < len) {
+		XMMS_DBG ("Underrun %d of %d (%d)", ret, len, xmms_sample_frame_size_get (output->format));
+
+		if ((ret % xmms_sample_frame_size_get (output->format)) != 0) {
+			xmms_log_error ("***********************************");
+			xmms_log_error ("* Read non-multiple of sample size,");
+			xmms_log_error ("*  you probably hear noise now :)");
+			xmms_log_error ("***********************************");
+		}
+		output->buffer_underruns++;
+	}
+
+	//output->bytes_written += ret;
+
+	return ret;
+}
+
 xmms_config_property_t *
 xmms_output_config_property_register (xmms_output_t *output, const gchar *name, const gchar *default_value, xmms_object_handler_t cb, gpointer userdata)
 {
@@ -690,6 +733,12 @@ xmms_playback_client_seeksamples (xmms_output_t *output, gint32 samples, gint32 
 		}
 		g_mutex_unlock (output->playtime_mutex);
 	}
+
+  // hacky hacky EVIL AWESOME
+
+	xmms_output_plugin_method_status(output->plugin, output, 666); 
+
+	//g_usleep (20000);
 
 	/* "just" tell filler */
 	xmms_output_filler_seek_state (output, samples);

@@ -310,7 +310,7 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 	xmms_jack_data_t *data;
 	xmms_samplefloat_t *buf[CHANNELS];
 	xmms_samplefloat_t tbuf[CHANNELS*1024];
-	gint i, j, res, toread;
+	gint i, j, res, res1, res2, res3, res4, toread;
 
 	g_return_val_if_fail (output, -1);
 	data = xmms_output_private_data_get (output);
@@ -374,49 +374,48 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 	if ((data->running) || (data->fading == 1) || (data->fading == 4)) {
 
 		while (toread) {
-
+		
 			gint t;
 
 			t = MIN (toread * CHANNELS * sizeof (xmms_samplefloat_t),
 			         sizeof (tbuf));
 
-			if (((data->seeking == 1) || (data->seeking == 0)) && (output_is_ready_for_period(output, t) == 0)) {
-				res = xmms_output_read (output, (gchar *)tbuf, t);
-
-				if (data->seeking == 1) {
-
-				if ((output_is_ready_for_period(output, t) == 0)) {
-					xmms_output_read (output, (gchar *)data->next, t);
-					} else {
-						xmms_log_info ("Not Enough Bits in the Ring Buffer to seek "); 
-						break;
-					}
-				if ((output_is_ready_for_period(output, t) == 0)) {
-					xmms_output_read (output, (gchar *)data->next2, t);
-					} else {
-						xmms_log_info ("Not Enough Bits in the Ring Buffer to seek 2 "); 
-						break;
-					}
-				if ((output_is_ready_for_period(output, t) == 0)) {
-					xmms_output_read (output, (gchar *)data->next3, t);
-					} else {
-						xmms_log_info ("Not Enough Bits in the Ring Buffer to seek 3"); 
-						break;
-					}
-
-				}
-
-			} else {
-				if (data->seeking == 0) {
+			if (data->seeking == 0) {
+        if ((output_is_ready_for_period(output, t) == 0)) {
+				  res = xmms_output_read (output, (gchar *)tbuf, t);
+        } else {
 					xmms_log_info ("Not Enough Bits in the Ring Buffer, its going to be a silent period..."); 
 					break;
 				}
 			}
 
-			if (res <= 0) {
-				XMMS_DBG ("output_read returned %d", res);
+			if (data->seeking == 1) {
+
+				if ((output_is_ready_for_period(output, t * 4) == 0)) {
+				  //XMMS_DBG ("output is totally ready");
+				  res1 = xmms_output_evil_read (output, (gchar *)tbuf, t, 1);
+					res2 = xmms_output_evil_read (output, (gchar *)data->next, t, 2);
+					res3 = xmms_output_evil_read (output, (gchar *)data->next2, t, 2);
+					res4 = xmms_output_evil_read (output, (gchar *)data->next3, t, 0);
+					//XMMS_DBG ("res4 is was %d", res4);
+				} else {
+						xmms_log_info ("Not Enough Bits in the Ring Buffer to seek 4x"); 
+						data->seeking = 0;
+						break;
+				}
+
+			}
+
+			if ((data->seeking == 0) && (res <= 0)) {
+				XMMS_DBG ("output_read returned %d (thats bad)", res);
 					break;
 			}
+
+			if (data->seeking > 0) {
+				res = 8192;
+			}
+
+
 
 			res /= CHANNELS * sizeof (xmms_samplefloat_t);
 			for (i = 0; i < res; i++) {
@@ -475,14 +474,14 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 	}
 
 	if(data->seeking == 5) {
-    XMMS_DBG ("seeked with %f", fade_per_sample_seek);
+    //XMMS_DBG ("seeked with %f", fade_per_sample_seek);
 		data->faded_samples = 0;
 		data->seeking = 0;
 		data->fading = 4;
 	}
 
 	if((data->fading == 1) || (data->fading == 4)) {
-		XMMS_DBG ("An example sample %f was faded by %fdb or %f of value resulting in a sample of %f faded samples at this time is %f", sample, fade_per_sample * data->faded_samples, fade_per_sample * ((data->fade_samples - data->faded_samples)), sample_result, data->faded_samples);
+		//XMMS_DBG ("An example sample %f was faded by %fdb or %f of value resulting in a sample of %f faded samples at this time is %f", sample, fade_per_sample * data->faded_samples, fade_per_sample * ((data->fade_samples - data->faded_samples)), sample_result, data->faded_samples);
 	}
 	/* fill rest of buffer with silence */
 	for (i = frames - toread; i < frames; i++) {
