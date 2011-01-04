@@ -40,10 +40,19 @@ typedef struct xmms_jack_data_St {
 	jack_port_t *ports[CHANNELS];
 	/*           ports */
 	gint chunksiz;
+
 	gint total_samples_to_fade;
 	gint current_faded_samples;
 	gint fading_in;
 	gint fading_out;
+
+	gint total_samples_to_crossfade;
+	gint crossfading;
+	gint current_crossfaded_samples;
+	xmms_samplefloat_t *crossfade_buffer_p[2]; // 2 channel hard code
+	xmms_samplefloat_t crossfade_buffer[2*16384];
+	xmms_samplefloat_t zero_buffer[2*16384];
+
 	gboolean error;
 	gboolean running;
 } xmms_jack_data_t;
@@ -156,6 +165,18 @@ xmms_jack_new (xmms_output_t *output)
 	data->fading_in = 0;
 	data->fading_out = 0;
 
+	data->crossfading = 0;
+	data->total_samples_to_crossfade = 16384;
+	data->current_crossfaded_samples = 0;
+
+	int i, j;
+
+	for (i = 0; i < data->total_samples_to_crossfade; i++) {
+		for (j = 0; j < CHANNELS; j++) {
+			data->zero_buffer[i*CHANNELS + j] = 0.0f;
+		}
+	}
+
 	xmms_output_private_data_set (output, data);
 
 	if (!xmms_jack_connect (output, data)) {
@@ -241,10 +262,41 @@ xmms_jack_status (xmms_output_t *output, xmms_playback_status_t status)
 		return FALSE;
 	}
 
+	gint resy;
+
 /*	if (!xmms_jack_ports_connected (data) && !xmms_jack_connect_ports (data)) {
 		return FALSE;
 	}
 */
+
+	if (status == 420) {
+		XMMS_DBG ("I know I got jumped!");
+
+		if ((output_is_ready_for_period(output, 1024 * 16) == 0)) {	
+				XMMS_DBG ("Output is ready to give 16 x 1024 samples");
+							// the 4 times two at the end here is the number of bytes per sample and the number of channels
+							resy = xmms_output_eviler_read (output, (gchar *)data->crossfade_buffer, ((16 * 1024) * (4 * 2)), 1);
+							XMMS_DBG ("Output Gave me %d", resy);
+							data->crossfading = 1;
+		} else {
+				XMMS_DBG ("Output is NOT ready to give 16 x 1024 samples");
+		}
+	} 
+
+	if (status == 666) {
+		XMMS_DBG ("I know I got seeked!");
+		
+		if ((output_is_ready_for_period(output, 1024 * 16) == 0)) {	
+				XMMS_DBG ("Output is ready to give 16 x 1024 samples");
+							// the 4 times two at the end here is the number of bytes per sample and the number of channels
+							resy = xmms_output_peek (output, (gchar *)data->crossfade_buffer, ((16 * 1024) * (4 * 2)));
+							XMMS_DBG ("Output Gave me %d", resy);
+							data->crossfading = 1;
+		} else {
+				XMMS_DBG ("Output is NOT ready to give 16 x 1024 samples");
+		}
+	} 
+
 	if (status == XMMS_PLAYBACK_STATUS_PLAY) {
 		data->fading_in = 1;
 		data->fading_out = 0;
@@ -253,7 +305,9 @@ xmms_jack_status (xmms_output_t *output, xmms_playback_status_t status)
 			data->current_faded_samples = data->total_samples_to_fade - data->current_faded_samples;
 		}
 		data->running = TRUE;
-	} else {
+	} 
+
+	if (status == XMMS_PLAYBACK_STATUS_PAUSE || status == XMMS_PLAYBACK_STATUS_STOP) {
 		data->running = FALSE;
 		data->fading_in = 0;
 		data->fading_out = 1;
@@ -281,6 +335,10 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 	xmms_jack_data_t *data;
 	xmms_samplefloat_t *buf[CHANNELS];
 	xmms_samplefloat_t tbuf[CHANNELS*1024];
+
+	xmms_samplefloat_t newbuf[CHANNELS*1024];
+	xmms_samplefloat_t newbuf2[CHANNELS*1024];
+
 	gint i, j, res, toread;
 
 	g_return_val_if_fail (output, -1);
@@ -303,8 +361,30 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 			if (output_is_ready_for_period(output, t) == 0) {
 				res = xmms_output_read (output, (gchar *)tbuf, t);
 			} else {
-				/* xmms_log_info ("Not Enough Bits in the Ring Buffer, its going to be a silent period..."); */
-				break;
+			  if (data->crossfading) {
+					/* We are crossfading so we will want to output te fade down of the other stuff mixed with silence unitil
+						output is ready, rather than simply just silence, so lets make up some silence usually just a few cycles */
+						
+
+
+						res = 8192; // RESET RES!
+
+
+						res /= CHANNELS * sizeof (xmms_samplefloat_t);
+						for (i = 0; i < res; i++) {
+							for (j = 0; j < CHANNELS; j++) {
+								tbuf[i*CHANNELS + j] = data->zero_buffer[i*CHANNELS + j];
+								}
+						}
+
+						res = 8192; // RESET RES!
+
+
+
+				} else {
+					XMMS_DBG ("Not Enough Bits in the Ring Buffer, its going to be a silent period...");
+					break;
+				}				
 			}
 
 			if (res <= 0) {
@@ -335,6 +415,53 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 					data->current_faded_samples = 0;
 					XMMS_DBG ("Fade Complete"); 
 				}
+			}
+
+			// IF CROSSFADING
+			if (data->crossfading) {
+				if(data->current_crossfaded_samples == 0) { XMMS_DBG ("Starting Crossfade"); }
+
+
+				// Do it
+				XMMS_DBG ("Crossfading");
+
+			// get a new buffer to pull from
+
+			res /= CHANNELS * sizeof (xmms_samplefloat_t);
+			for (i = 0; i < res; i++) {
+				for (j = 0; j < CHANNELS; j++) {
+					newbuf[i*CHANNELS + j] = data->crossfade_buffer[((data->current_crossfaded_samples + i) * CHANNELS) + j];
+				}
+			}
+
+			res = 8192; // RESET RES!
+
+
+			res /= CHANNELS * sizeof (xmms_samplefloat_t);
+			for (i = 0; i < res; i++) {
+				for (j = 0; j < CHANNELS; j++) {
+					newbuf2[i*CHANNELS + j] = tbuf[i*CHANNELS + j];
+				}
+			}
+
+			res = 8192; // RESET RES!
+
+
+
+				crossfade_chunk(newbuf, newbuf2, tbuf, data->current_crossfaded_samples, 1024, data->total_samples_to_crossfade);
+
+
+				if(data->current_crossfaded_samples < data->total_samples_to_crossfade) { 
+					// hardcoded fix this
+					data->current_crossfaded_samples += 1024;
+				}
+
+				if(data->current_crossfaded_samples >= data->total_samples_to_crossfade) { 
+					data->crossfading = 0;
+					data->current_crossfaded_samples = 0;
+					XMMS_DBG ("CrossFade Complete"); 
+				}
+
 			}
 
 			res /= CHANNELS * sizeof (xmms_samplefloat_t);

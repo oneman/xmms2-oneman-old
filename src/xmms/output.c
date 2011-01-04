@@ -348,13 +348,22 @@ seek_done (void *data)
 static void
 xmms_output_filler_state_nolock (xmms_output_t *output, xmms_output_filler_state_t state)
 {
+
+	if (state == FILLER_QUIT || state == FILLER_STOP || state == FILLER_KILL) {
+    	  xmms_output_plugin_method_status(output->plugin, output, 420); 
 	output->filler_state = state;
 	g_cond_signal (output->filler_state_cond);
-	if (state == FILLER_QUIT || state == FILLER_STOP || state == FILLER_KILL) {
-    //	xmms_output_plugin_method_status(output->plugin, output, 777); 
 				XMMS_DBG ("it was me i killed it!");
 		xmms_ringbuf_clear (output->filler_buffer);
-	}
+	} else {
+
+	output->filler_state = state;
+	g_cond_signal (output->filler_state_cond);
+
+}
+
+
+
 	if (state != FILLER_STOP) {
 		xmms_ringbuf_set_eos (output->filler_buffer, FALSE);
 	}
@@ -561,6 +570,7 @@ xmms_output_peek (xmms_output_t *output, char *buffer, gint len)
 	g_mutex_lock (output->filler_mutex);
 	xmms_ringbuf_wait_used (output->filler_buffer, len, output->filler_mutex);
 	ret = xmms_ringbuf_peek (output->filler_buffer, buffer, len);
+	XMMS_DBG("I peekeee");
 	//if (ret == 0 && xmms_ringbuf_iseos (output->filler_buffer)) {
 	//	xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_STOP);
 	//	g_mutex_unlock (output->filler_mutex);
@@ -634,7 +644,7 @@ xmms_output_evil_read (xmms_output_t *output, char *buffer, gint len, gint lock)
 	gint ret;
 	gint letloose;
 	xmms_error_t err;
-  if(lock == 1) letloose = 0;
+  if(lock == 1) letloose = 1;
   if(lock == 0) letloose = 1;
 	xmms_error_reset (&err);
 
@@ -643,14 +653,14 @@ xmms_output_evil_read (xmms_output_t *output, char *buffer, gint len, gint lock)
 
 	if(lock == 1) g_mutex_lock (output->filler_mutex);
 	//xmms_ringbuf_wait_used (output->filler_buffer, len, output->filler_mutex);
-	ret = xmms_ringbuf_evil_read (output->filler_buffer, buffer, len, letloose);
+	ret = xmms_ringbuf_peek (output->filler_buffer, buffer, len);
 	if (ret == 0 && xmms_ringbuf_iseos (output->filler_buffer)) {
 		XMMS_DBG ("fucksocked");
 		xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_STOP);
 		g_mutex_unlock (output->filler_mutex);
 		return -1;
 	}
-	if(lock == 0) g_mutex_unlock (output->filler_mutex);
+	if(lock == 1) g_mutex_unlock (output->filler_mutex);
 
 	//update_playtime (output, ret);
 
@@ -784,11 +794,11 @@ xmms_playback_client_seeksamples (xmms_output_t *output, gint32 samples, gint32 
 	}
 
   // hacky hacky EVIL AWESOME
-
-	//xmms_output_plugin_method_status(output->plugin, output, 666); 
+		XMMS_DBG ("I'm going to tell jack about my seeking intentions");
+	xmms_output_plugin_method_status(output->plugin, output, 666); 
 
 	//g_usleep (20000);
-
+		XMMS_DBG ("I'm now going to do that seek");
 	/* "just" tell filler */
 	xmms_output_filler_seek_state (output, samples);
 }

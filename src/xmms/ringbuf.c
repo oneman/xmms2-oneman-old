@@ -174,6 +174,7 @@ read_bytes (xmms_ringbuf_t *ringbuf, guint8 *data, guint len)
 		xmms_ringbuf_hotspot_t *hs = g_queue_peek_head (ringbuf->hotspots);
 		if (hs->pos != ringbuf->rd_index) {
 			/* make sure we don't cross a hotspot */
+			printf("I crossed a hotspot!");
 			to_read = MIN (to_read,
 			               (hs->pos - ringbuf->rd_index + ringbuf->buffer_size)
 			               % ringbuf->buffer_size);
@@ -273,7 +274,7 @@ xmms_ringbuf_peek (xmms_ringbuf_t *ringbuf, gpointer data, guint len)
 	g_return_val_if_fail (data, 0);
 	g_return_val_if_fail (len > 0, 0);
 	g_return_val_if_fail (len <= ringbuf->buffer_size_usable, 0);
-
+	printf("I was peeked at!");
 	return read_bytes (ringbuf, (guint8 *) data, len);
 }
 

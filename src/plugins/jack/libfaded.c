@@ -48,7 +48,6 @@ int fade_out_chunk(void *sample_buffer, int sample_start_number, int samples_in_
 int fade_chunk(void *sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples, int in_or_out);
 int crossfade_chunk(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples);
 
-
 /* ye functions */
 
 float
