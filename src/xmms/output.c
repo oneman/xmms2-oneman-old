@@ -351,7 +351,7 @@ xmms_output_filler_state_nolock (xmms_output_t *output, xmms_output_filler_state
 	output->filler_state = state;
 	g_cond_signal (output->filler_state_cond);
 	if (state == FILLER_QUIT || state == FILLER_STOP || state == FILLER_KILL) {
-    	xmms_output_plugin_method_status(output->plugin, output, 777); 
+    //	xmms_output_plugin_method_status(output->plugin, output, 777); 
 				XMMS_DBG ("it was me i killed it!");
 		xmms_ringbuf_clear (output->filler_buffer);
 	}
@@ -785,7 +785,7 @@ xmms_playback_client_seeksamples (xmms_output_t *output, gint32 samples, gint32 
 
   // hacky hacky EVIL AWESOME
 
-	xmms_output_plugin_method_status(output->plugin, output, 666); 
+	//xmms_output_plugin_method_status(output->plugin, output, 666); 
 
 	//g_usleep (20000);
 
