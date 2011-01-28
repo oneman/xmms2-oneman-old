@@ -1,7 +1,7 @@
 /** @file pitch.c
  *  pitch effect plugin
  *
- *  Copyright (C) 2006-2009 XMMS2 Team
+ *  Copyright (C) 2006-2011 XMMS2 Team
  *
  *  This program is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU General Public License
@@ -26,10 +26,9 @@
 
 #include <samplerate.h>
 
-
+/* oneman was here */
 
 typedef struct {
-	gfloat *pvoc;
 	SRC_STATE *resampler;
 
 	gint winsize;
@@ -37,14 +36,11 @@ typedef struct {
 	gint bufsize;
 
 	xmms_sample_t *iobuf;
-	xmms_sample_t *procbuf;
 	gfloat *resbuf;
 	GString *outbuf;
 
-	gfloat speed;
 	gfloat pitch;
 	SRC_DATA resdata;
-	gint attack_detection;
 	gboolean enabled;
 } xmms_pitch_data_t;
 
@@ -64,7 +60,7 @@ static gint64 xmms_pitch_seek (xmms_xform_t *xform, gint64 offset,
 
 XMMS_XFORM_PLUGIN ("pitch",
                    "pitch effect", XMMS_VERSION,
-                   "Phase pitch effect plugin",
+                   "Pitch effect plugin",
                    xmms_pitch_plugin_setup);
 
 static gboolean
@@ -110,7 +106,6 @@ xmms_pitch_init (xmms_xform_t *xform)
 	priv->bufsize = priv->winsize * priv->channels;
 
 	priv->iobuf = g_malloc (priv->bufsize * sizeof (gfloat));
-	priv->procbuf = g_malloc (priv->bufsize * sizeof (gfloat));
 	priv->resbuf = g_malloc (priv->bufsize * sizeof (gfloat));
 	priv->outbuf = g_string_new (NULL);
 
@@ -164,7 +159,6 @@ xmms_pitch_destroy (xmms_xform_t *xform)
 
 	g_string_free (data->outbuf, TRUE);
 	g_free (data->resbuf);
-	g_free (data->procbuf);
 	g_free (data->iobuf);
 	g_free (data);
 }
@@ -215,8 +209,6 @@ xmms_pitch_read (xmms_xform_t *xform, xmms_sample_t *buffer, gint len,
 
 	size = MIN (data->outbuf->len, len);
 	while (size == 0) {
-		int i, dpos;
-		gfloat *samples = (gfloat *) data->iobuf;
 
 		if (!data->enabled) {
 			return xmms_xform_read (xform, buffer, len, error);
@@ -245,19 +237,17 @@ xmms_pitch_read (xmms_xform_t *xform, xmms_sample_t *buffer, gint len,
 				}
 
 			data->resdata.data_in = data->iobuf;
-			data->resdata.input_frames = 2048;
+			data->resdata.input_frames = data->winsize;
 		}
 		src_process (data->resampler, &data->resdata);
 		data->resdata.data_in += data->resdata.input_frames_used * data->channels;
 		data->resdata.input_frames -= data->resdata.input_frames_used;
 
-	//	for (i=0; i<data->resdata.output_frames_gen * data->channels; i++) {
-	//		samples[i] = data->resbuf[i];// * 32767;
-	//	}
-		g_string_append_len (data->outbuf, data->resbuf,
+		g_string_append_len (data->outbuf, (gchar *)data->resbuf,
 		                     data->resdata.output_frames_gen *
 		                     data->channels *
 		                     sizeof (gfloat));
+
 		size = MIN (data->outbuf->len, len);
 	}
 
