@@ -15,7 +15,7 @@
  */
 
 #include <glib.h>
-
+#include "xmms/xmms_log.h"
 #include "xmmspriv/xmms_xform.h"
 #include "xmmspriv/xmms_streamtype.h"
 #include "xmmspriv/xmms_sample.h"
@@ -48,6 +48,8 @@ xmms_converter_plugin_init (xmms_xform_t *xform)
 	if (!to) {
 		return FALSE;
 	}
+
+//XMMS_DBG("**********lala %d", xmms_xform_indata_find_str(xform, intype));
 
 	conv = xmms_sample_converter_init (intype, to);
 	if (!conv) {

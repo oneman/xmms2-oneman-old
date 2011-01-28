@@ -80,6 +80,9 @@ xmms_vocoder_plugin_setup (xmms_xform_plugin_t *xform_plugin)
 
 	xmms_xform_plugin_methods_set (xform_plugin, &methods);
 
+	xmms_xform_plugin_config_property_register (xform_plugin, "enabled", "100",
+	                                            NULL, NULL);
+
 	xmms_xform_plugin_config_property_register (xform_plugin, "speed", "100",
 	                                            NULL, NULL);
 
@@ -112,7 +115,7 @@ xmms_vocoder_init (xmms_xform_t *xform)
 	priv->channels = xmms_xform_indata_get_int (xform, XMMS_STREAM_TYPE_FMT_CHANNELS);
 	priv->bufsize = priv->winsize * priv->channels;
 
-	priv->iobuf = g_malloc (priv->bufsize * sizeof (gint16));
+	priv->iobuf = g_malloc (priv->bufsize * sizeof (gfloat));
 	priv->procbuf = g_malloc (priv->bufsize * sizeof (pvocoder_sample_t));
 	priv->resbuf = g_malloc (priv->bufsize * sizeof (gfloat));
 	priv->outbuf = g_string_new (NULL);
@@ -247,7 +250,7 @@ xmms_vocoder_read (xmms_xform_t *xform, xmms_sample_t *buffer, gint len,
 	size = MIN (data->outbuf->len, len);
 	while (size == 0) {
 		int i, dpos;
-		gint16 *samples = (gint16 *) data->iobuf;
+		gfloat *samples = (gfloat *) data->iobuf;
 
 		if (!data->enabled) {
 			return xmms_xform_read (xform, buffer, len, error);
@@ -260,11 +263,11 @@ xmms_vocoder_read (xmms_xform_t *xform, xmms_sample_t *buffer, gint len,
 
 				memset (data->procbuf, 0, data->bufsize *
 				        sizeof (pvocoder_sample_t));
-				while (read < data->bufsize * sizeof (gint16)) {
+				while (read < data->bufsize * sizeof (gfloat)) {
 					ret = xmms_xform_read (xform,
 					                       data->iobuf+read,
 					                       data->bufsize *
-					                       sizeof (gint16)-read,
+					                       sizeof (gfloat)-read,
 					                       error);
 					if (ret <= 0) {
 						if (!ret && !read) {
@@ -279,7 +282,7 @@ xmms_vocoder_read (xmms_xform_t *xform, xmms_sample_t *buffer, gint len,
 				}
 
 				for (i=0; i<data->bufsize; i++) {
-					data->procbuf[i] = (pvocoder_sample_t) samples[i] / 32767;
+					data->procbuf[i] = (pvocoder_sample_t) samples[i];// / 32767;
 				}
 				pvocoder_add_chunk (data->pvoc, data->procbuf);
 				dpos = pvocoder_get_chunk (data->pvoc, data->procbuf);
@@ -292,12 +295,12 @@ xmms_vocoder_read (xmms_xform_t *xform, xmms_sample_t *buffer, gint len,
 		data->resdata.input_frames -= data->resdata.input_frames_used;
 
 		for (i=0; i<data->resdata.output_frames_gen * data->channels; i++) {
-			samples[i] = data->resbuf[i] * 32767;
+			samples[i] = data->resbuf[i];// * 32767;
 		}
 		g_string_append_len (data->outbuf, data->iobuf,
 		                     data->resdata.output_frames_gen *
 		                     data->channels *
-		                     sizeof (gint16));
+		                     sizeof (gfloat));
 		size = MIN (data->outbuf->len, len);
 	}
 

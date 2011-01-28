@@ -116,7 +116,7 @@ xmms_pitch_init (xmms_xform_t *xform)
 
 
 
-	priv->resampler = src_new (SRC_LINEAR, priv->channels, NULL);
+	priv->resampler = src_new (SRC_SINC_MEDIUM_QUALITY, priv->channels, NULL);
 	g_return_val_if_fail (priv->resampler, FALSE);
 
 	xmms_xform_private_data_set (xform, priv);
@@ -225,8 +225,7 @@ xmms_pitch_read (xmms_xform_t *xform, xmms_sample_t *buffer, gint len,
 		if (!data->resdata.input_frames) {
 				int ret, read = 0;
 
-				memset (data->procbuf, 0, data->bufsize *
-				        sizeof (gfloat));
+
 				while (read < data->bufsize * sizeof (gfloat)) {
 					ret = xmms_xform_read (xform,
 					                       data->iobuf+read,
@@ -246,16 +245,16 @@ xmms_pitch_read (xmms_xform_t *xform, xmms_sample_t *buffer, gint len,
 				}
 
 			data->resdata.data_in = data->iobuf;
-			data->resdata.input_frames = data->bufsize / 2;
+			data->resdata.input_frames = 2048;
 		}
 		src_process (data->resampler, &data->resdata);
 		data->resdata.data_in += data->resdata.input_frames_used * data->channels;
 		data->resdata.input_frames -= data->resdata.input_frames_used;
 
-		for (i=0; i<data->bufsize; i++) {
-			samples[i] = data->resbuf[i];// * 32767;
-		}
-		g_string_append_len (data->outbuf, data->iobuf,
+	//	for (i=0; i<data->resdata.output_frames_gen * data->channels; i++) {
+	//		samples[i] = data->resbuf[i];// * 32767;
+	//	}
+		g_string_append_len (data->outbuf, data->resbuf,
 		                     data->resdata.output_frames_gen *
 		                     data->channels *
 		                     sizeof (gfloat));

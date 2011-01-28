@@ -1627,13 +1627,13 @@ xmms_xform_new_effect (xmms_xform_t *last, xmms_medialib_entry_t entry,
 	}
 
 	xform_plugin = (xmms_xform_plugin_t *) plugin;
-	if (!xmms_xform_plugin_supports (xform_plugin, last->out_type, NULL)) {
+/*	if (!xmms_xform_plugin_supports (xform_plugin, last->out_type, NULL)) {
 		xmms_log_info ("Effect '%s' doesn't support format, skipping",
 		               xmms_plugin_shortname_get (plugin));
 		xmms_object_unref (plugin);
 		return last;
 	}
-
+*/
 	xform = xmms_xform_new (xform_plugin, last, entry, goal_formats);
 
 	if (xform) {

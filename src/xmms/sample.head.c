@@ -100,6 +100,10 @@ xmms_sample_converter_init (xmms_stream_type_t *from, xmms_stream_type_t *to)
 	                                   tchannels, tformat,
 	                                   conv->resample);
 
+		xmms_log_error ("I is convert from %s/%d/%d to %s/%d/%d.",
+		                xmms_sample_name_get (fformat), fsamplerate, fchannels,
+		                xmms_sample_name_get (tformat), tsamplerate, tchannels);
+
 	if (!conv->func) {
 		xmms_object_unref (conv);
 		xmms_log_error ("Unable to convert from %s/%d/%d to %s/%d/%d.",
