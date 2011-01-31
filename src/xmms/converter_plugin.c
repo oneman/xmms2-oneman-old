@@ -128,7 +128,7 @@ xmms_converter_plugin_init (xmms_xform_t *xform)
 	priv->resbuf = g_malloc (priv->bufsize * sizeof (gfloat));
 	priv->outbuf = g_string_new (NULL);
 
-	priv->resampler = src_new (SRC_SINC_BEST_QUALITY, priv->channels, NULL);
+	priv->resampler = src_new (SRC_SINC_MEDIUM_QUALITY, priv->channels, NULL);
 	g_return_val_if_fail (priv->resampler, FALSE);
 
 
