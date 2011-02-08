@@ -453,7 +453,7 @@ xmms_output_filler (void *arg)
 					output->filler_seek = ret;
 				}
 
-				if (xmms_ringbuf_bytes_used(output->filler_buffer) >= (3 * (16 * 1024) * (4 * 2))) {
+				if (xmms_ringbuf_bytes_used(output->filler_buffer) >= (2 * (16 * 1024) * (4 * 2))) {
 					//xmms_ringbuf_evil_read (output->filler_buffer, (gchar *)output->temp_buffer, ((16 * 1024) * (4 * 2)), 0 );
 					xmms_ringbuf_peek (output->filler_buffer, (gchar *)output->crossfade_buffer, (2 * (16 * 1024) * (4 * 2)));
 					XMMS_DBG ("seek loaded");
