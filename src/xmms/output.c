@@ -362,7 +362,22 @@ xmms_output_filler_state_nolock (xmms_output_t *output, xmms_output_filler_state
 	output->filler_state = state;
 	g_cond_signal (output->filler_state_cond);
 				XMMS_DBG ("it was me i killed it!");
-		xmms_ringbuf_clear (output->filler_buffer);
+		if (xmms_ringbuf_bytes_used(output->filler_buffer) >= (2 * (16 * 1024) * (4 * 2))) {
+					xmms_ringbuf_evil_read (output->filler_buffer, (gchar *)output->temp_buffer, ((16 * 1024) * (4 * 2)), 0 );
+					xmms_ringbuf_peek (output->filler_buffer, (gchar *)output->crossfade_buffer, ((16 * 1024) * (4 * 2)));
+					XMMS_DBG ("cross song seek loaded");
+							output->crossfading = 1;
+				} else {
+					XMMS_DBG ("fubed dubed");
+				}
+				xmms_ringbuf_clear (output->filler_buffer);
+
+
+
+				xmms_ringbuf_write (output->filler_buffer,
+				                         output->temp_buffer,
+				                         ((16 * 1024) * (4 * 2))
+				                         );
 	} else {
 
 	output->filler_state = state;

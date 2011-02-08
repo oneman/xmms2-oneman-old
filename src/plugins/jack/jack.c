@@ -274,7 +274,7 @@ xmms_jack_status (xmms_output_t *output, xmms_playback_status_t status)
 	if (status == 420) {
 		XMMS_DBG ("I know I got jumped!");
 
-		if ((output_is_ready_for_period(output, 1024 * 16 * 4 * 2) == 0)) {	
+	/*	if ((output_is_ready_for_period(output, 1024 * 16 * 4 * 2) == 0)) {	
 				XMMS_DBG ("Output is ready to give 16 x 1024 samples");
 							// the 4 times two at the end here is the number of bytes per sample and the number of channels
 							resy = xmms_output_eviler_read (output, (gchar *)data->crossfade_buffer, ((16 * 1024) * (4 * 2)), 1);
@@ -283,7 +283,7 @@ xmms_jack_status (xmms_output_t *output, xmms_playback_status_t status)
 				data->jumping = 1;
 		} else {
 				XMMS_DBG ("Output is NOT ready to give 16 x 1024 samples");
-		}
+		}*/
 	} 
 
 	if (status == 666) {
