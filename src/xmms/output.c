@@ -453,8 +453,8 @@ xmms_output_filler (void *arg)
 					output->filler_seek = ret;
 				}
 
-				if (xmms_ringbuf_bytes_used(output->filler_buffer) >= ((16 * 1024) * (4 * 2))) {
-					//xmms_ringbuf_evil_read (output->filler_buffer, (gchar *)output->temp_buffer, ((16 * 1024) * (4 * 2)), 0 );
+				if (xmms_ringbuf_bytes_used(output->filler_buffer) >= (2 * (16 * 1024) * (4 * 2))) {
+					xmms_ringbuf_evil_read (output->filler_buffer, (gchar *)output->temp_buffer, ((16 * 1024) * (4 * 2)), 0 );
 					xmms_ringbuf_peek (output->filler_buffer, (gchar *)output->crossfade_buffer, ((16 * 1024) * (4 * 2)));
 					XMMS_DBG ("seek loaded");
 							output->crossfading = 1;
@@ -463,14 +463,12 @@ xmms_output_filler (void *arg)
 				}
 				xmms_ringbuf_clear (output->filler_buffer);
 
-		//gint skip = MIN (((16 * 1024) * (4 * 2)), output->toskip);
 
-			//output->toskip -= skip;
 
-			//	xmms_ringbuf_write (output->filler_buffer,
-				//                         output->temp_buffer,// + skip,
-				  //                       ((16 * 1024) * (4 * 2))// - skip
-				    //                     );
+				xmms_ringbuf_write (output->filler_buffer,
+				                         output->temp_buffer,
+				                         ((16 * 1024) * (4 * 2))
+				                         );
 
 
 				xmms_ringbuf_hotspot_set (output->filler_buffer, seek_done, NULL, output);
