@@ -21,7 +21,7 @@
 
 #include <string.h>
 #include <unistd.h>
-
+#include "../plugins/jack/libfaded.c"
 #include "xmmspriv/xmms_output.h"
 #include "xmmspriv/xmms_ringbuf.h"
 #include "xmmspriv/xmms_plugin.h"
@@ -123,6 +123,12 @@ struct xmms_output_St {
 	xmms_medialib_entry_t current_entry;
 	guint toskip;
 
+
+	gint total_samples_to_crossfade;
+	gint crossfading;
+	gint current_crossfaded_samples;
+	xmms_samplefloat_t crossfade_buffer[2*16384];
+	xmms_samplefloat_t temp_buffer[2*16384];
 	/* */
 	GThread *filler_thread;
 	GMutex *filler_mutex;
@@ -299,7 +305,7 @@ song_changed (void *data)
 	entry = xmms_xform_entry_get (arg->chain);
 
 	XMMS_DBG ("Running hotspot! Song changed!! %d", entry);
-
+	//xmms_output_plugin_method_status(arg->output->plugin, arg->output, 777); 
 	arg->output->played = 0;
 	arg->output->current_entry = entry;
 
@@ -327,7 +333,7 @@ song_changed (void *data)
 	                    XMMS_IPC_SIGNAL_PLAYBACK_CURRENTID,
 	                    XMMSV_TYPE_INT32,
 	                    entry);
-
+	xmms_output_plugin_method_status(arg->output->plugin, arg->output, 777); 
 	return TRUE;
 }
 
@@ -350,7 +356,9 @@ xmms_output_filler_state_nolock (xmms_output_t *output, xmms_output_filler_state
 {
 
 	if (state == FILLER_QUIT || state == FILLER_STOP || state == FILLER_KILL) {
+	if (state == FILLER_STOP || state == FILLER_KILL) {
     	  xmms_output_plugin_method_status(output->plugin, output, 420); 
+			}
 	output->filler_state = state;
 	g_cond_signal (output->filler_state_cond);
 				XMMS_DBG ("it was me i killed it!");
@@ -445,9 +453,24 @@ xmms_output_filler (void *arg)
 					output->filler_seek = ret;
 				}
 
+				if (xmms_ringbuf_bytes_used(output->filler_buffer) >= (3 * (16 * 1024) * (4 * 2))) {
+					//xmms_ringbuf_evil_read (output->filler_buffer, (gchar *)output->temp_buffer, ((16 * 1024) * (4 * 2)), 0 );
+					xmms_ringbuf_peek (output->filler_buffer, (gchar *)output->crossfade_buffer, (2 * (16 * 1024) * (4 * 2)));
+					XMMS_DBG ("seek loaded");
+							output->crossfading = 1;
+				} else {
+					XMMS_DBG ("fubed");
+				}
 				xmms_ringbuf_clear (output->filler_buffer);
 
+		//gint skip = MIN (((16 * 1024) * (4 * 2)), output->toskip);
 
+			//output->toskip -= skip;
+
+			//	xmms_ringbuf_write (output->filler_buffer,
+				//                         output->temp_buffer,// + skip,
+				  //                       ((16 * 1024) * (4 * 2))// - skip
+				    //                     );
 
 
 				xmms_ringbuf_hotspot_set (output->filler_buffer, seek_done, NULL, output);
@@ -521,6 +544,19 @@ xmms_output_filler (void *arg)
 
 			output->toskip -= skip;
 			if (ret > skip) {
+
+			if(output->crossfading == 1) { 
+													// 512 is stereo frames samples of 4096 bytes
+				crossfade_chunk(output->crossfade_buffer + ( 2 * output->current_crossfaded_samples), buf + skip, buf + skip, output->current_crossfaded_samples, ((ret - skip) / 8), output->total_samples_to_crossfade);
+				output->current_crossfaded_samples = output->current_crossfaded_samples + ((ret - skip) / 8);
+
+					if (output->total_samples_to_crossfade <= output->current_crossfaded_samples) {
+
+						output->crossfading = 0;
+						output->current_crossfaded_samples = 0;
+					}
+
+				}
 				xmms_ringbuf_write_wait (output->filler_buffer,
 				                         buf + skip,
 				                         ret - skip,
@@ -610,8 +646,8 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 	g_return_val_if_fail (buffer, -1);
 
 	g_mutex_lock (output->filler_mutex);
-	xmms_ringbuf_wait_used (output->filler_buffer, len, output->filler_mutex);
-	ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
+	//xmms_ringbuf_wait_used (output->filler_buffer, len, output->filler_mutex);
+	ret = xmms_ringbuf_read_wait (output->filler_buffer, buffer, len, output->filler_mutex);
 	if (ret == 0 && xmms_ringbuf_iseos (output->filler_buffer)) {
 		xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_STOP);
 		g_mutex_unlock (output->filler_mutex);
@@ -697,7 +733,8 @@ xmms_output_eviler_read (xmms_output_t *output, char *buffer, gint len, gint loc
 
 	//if(lock == 1) g_mutex_lock (output->filler_mutex);
 	//xmms_ringbuf_wait_used (output->filler_buffer, len, output->filler_mutex);
-	ret = xmms_ringbuf_evil_read (output->filler_buffer, buffer, len, 0);
+	//ret = xmms_ringbuf_evil_read (output->filler_buffer, buffer, len, 0);
+	ret = xmms_ringbuf_peek (output->filler_buffer, buffer, len);
 	if (ret == 0 && xmms_ringbuf_iseos (output->filler_buffer)) {
 		XMMS_DBG ("fucksocked");
 		xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_STOP);
@@ -1122,6 +1159,10 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->filler_state_cond = g_cond_new ();
 	output->filler_buffer = xmms_ringbuf_new (size);
 	output->filler_thread = g_thread_create (xmms_output_filler, output, TRUE, NULL);
+
+	output->crossfading = 0;
+	output->total_samples_to_crossfade = 16384;
+	output->current_crossfaded_samples = 0;
 
 	xmms_config_property_register ("output.flush_on_pause", "1", NULL, NULL);
 	xmms_ipc_object_register (XMMS_IPC_OBJECT_PLAYBACK, XMMS_OBJECT (output));
