@@ -75,7 +75,7 @@ static gint xmms_playback_client_current_id (xmms_output_t *output, xmms_error_t
 static gint32 xmms_playback_client_playtime (xmms_output_t *output, xmms_error_t *err);
 
 typedef enum xmms_output_filler_state_E {
-	FILLER_STOP,		/* Pauses filler thread when playback status is not playing */
+	FILLER_STOP,		/* Pauses filler thread when stopped */
 	FILLER_RUN,
 	FILLER_QUIT,		/* This actually ends the output filler thread */	
 	FILLER_KILL,		/* This is used to throw away the output buffer in case of a manual track change */
@@ -154,6 +154,8 @@ struct xmms_output_St {
 
 	GCond *filler_state_cond;
 	xmms_output_filler_state_t filler_state;
+	xmms_output_filler_state_t new_filler_state;
+	xmms_output_filler_state_t new_internal_filler_state;
 
 	xmms_ringbuf_t *filler_buffer;
 	guint32 filler_seek;
@@ -355,6 +357,7 @@ song_changed (void *data)
 		return FALSE;
 	}
 
+	/* This will never be true at this time */
 	if (arg->flush)
 		xmms_output_flush (arg->output);
 
@@ -376,38 +379,38 @@ seek_done (void *data)
 	output->toskip = output->filler_skip * xmms_sample_frame_size_get (output->format);
 	/* g_mutex_unlock (output->playtime_mutex); */
 
-	xmms_output_flush (output);
+	/* xmms_output_flush (output); */
 	return TRUE;
 }
 
 static void
 xmms_output_filler_state_nolock (xmms_output_t *output, xmms_output_filler_state_t state)
 {
-	output->filler_state = state;
+	g_atomic_int_set(&output->new_filler_state, state);
 	g_cond_signal (output->filler_state_cond);
-	if (state == FILLER_QUIT || state == FILLER_STOP || state == FILLER_KILL) {
-		xmms_ringbuf_clear (output->filler_buffer);
+	if (state == FILLER_QUIT || state == FILLER_STOP) { /* || state == FILLER_KILL) { */
+		/* xmms_ringbuf_clear (output->filler_buffer); */
 	}
 	if (state != FILLER_STOP) {
-		xmms_ringbuf_set_eos (output->filler_buffer, FALSE);
+		/* xmms_ringbuf_set_eos (output->filler_buffer, FALSE); */
 	}
 }
 
 static void
 xmms_output_filler_state (xmms_output_t *output, xmms_output_filler_state_t state)
 {
-	g_mutex_lock (output->filler_mutex);
+	/* g_mutex_lock (output->filler_mutex); */
 	xmms_output_filler_state_nolock (output, state);
-	g_mutex_unlock (output->filler_mutex);
+	/* g_mutex_unlock (output->filler_mutex); */
 }
 static void
 xmms_output_filler_seek_state (xmms_output_t *output, guint32 samples)
 {
-	g_mutex_lock (output->filler_mutex);
-	output->filler_state = FILLER_SEEK;
+	/* g_mutex_lock (output->filler_mutex); */
+	g_atomic_int_set(&output->new_filler_state, FILLER_SEEK);
 	output->filler_seek = samples;
 	g_cond_signal (output->filler_state_cond);
-	g_mutex_unlock (output->filler_mutex);
+	/* g_mutex_unlock (output->filler_mutex); */
 }
 
 static void *
@@ -419,17 +422,30 @@ xmms_output_filler (void *arg)
 	char buf[4096];
 	xmms_error_t err;
 	gint ret;
+	gint new_filler_state;
 
 	xmms_error_reset (&err);
 
-	g_mutex_lock (output->filler_mutex);
+	/* g_mutex_lock (output->filler_mutex); */
 	while (output->filler_state != FILLER_QUIT) {
+
+		if(output->new_internal_filler_state < 10) {
+			output->filler_state = output->new_internal_filler_state;
+			output->new_internal_filler_state = 10;
+		} else {
+			new_filler_state = g_atomic_int_get(&output->new_filler_state);
+			if(output->filler_state != new_filler_state) {
+				output->filler_state = new_filler_state;
+				continue;
+			}
+		}
+
 		if (output->filler_state == FILLER_STOP) {
 			if (chain) {
 				xmms_object_unref (chain);
 				chain = NULL;
 			}
-			xmms_ringbuf_set_eos (output->filler_buffer, TRUE);
+			//xmms_ringbuf_set_eos (output->filler_buffer, TRUE);
 			g_cond_wait (output->filler_state_cond, output->filler_mutex);
 			last_was_kill = FALSE;
 			continue;
@@ -438,17 +454,17 @@ xmms_output_filler (void *arg)
 			if (chain) {
 				xmms_object_unref (chain);
 				chain = NULL;
-				output->filler_state = FILLER_RUN;
-				last_was_kill = TRUE;
+				output->new_internal_filler_state = FILLER_RUN;
+				last_was_kill = TRUE; /* last was seek or jump actually */
 			} else {
-				output->filler_state = FILLER_STOP;
+				output->new_internal_filler_state = FILLER_STOP;
 			}
 			continue;
 		}
 		if (output->filler_state == FILLER_SEEK) {
 			if (!chain) {
 				XMMS_DBG ("Seek without chain, ignoring..");
-				output->filler_state = FILLER_STOP;
+				output->new_internal_filler_state = FILLER_STOP;
 				continue;
 			}
 
@@ -466,11 +482,12 @@ xmms_output_filler (void *arg)
 					output->filler_skip = 0;
 					output->filler_seek = ret;
 				}
-
-				xmms_ringbuf_clear (output->filler_buffer);
-				xmms_ringbuf_hotspot_set (output->filler_buffer, seek_done, NULL, output);
+	
+				/* Why clear a perfectly good buffer? :P */
+				/* xmms_ringbuf_clear (output->filler_buffer); */
+				//xmms_ringbuf_hotspot_set (output->filler_buffer, seek_done, NULL, output);
 			}
-			output->filler_state = FILLER_RUN;
+			output->new_internal_filler_state = FILLER_RUN;
 		}
 
 		if (!chain) {
@@ -478,13 +495,13 @@ xmms_output_filler (void *arg)
 			xmms_output_song_changed_arg_t *hsarg;
 			xmms_medialib_session_t *session;
 
-			g_mutex_unlock (output->filler_mutex);
+			/* g_mutex_unlock (output->filler_mutex); */
 
 			entry = xmms_playlist_current_entry (output->playlist);
 			if (!entry) {
 				XMMS_DBG ("No entry from playlist!");
-				output->filler_state = FILLER_STOP;
-				g_mutex_lock (output->filler_mutex);
+				output->new_internal_filler_state = FILLER_STOP;
+				/* g_mutex_lock (output->filler_mutex); */
 				continue;
 			}
 
@@ -502,35 +519,36 @@ xmms_output_filler (void *arg)
 
 				if (!xmms_playlist_advance (output->playlist)) {
 					XMMS_DBG ("End of playlist");
-					output->filler_state = FILLER_STOP;
+					output->new_internal_filler_state = FILLER_STOP;
 				}
-				g_mutex_lock (output->filler_mutex);
+				/* g_mutex_lock (output->filler_mutex); */
 				continue;
 			}
 
 			hsarg = g_new0 (xmms_output_song_changed_arg_t, 1);
 			hsarg->output = output;
 			hsarg->chain = chain;
-			hsarg->flush = last_was_kill;
+			/* forget the flushing */
+			/* hsarg->flush = last_was_kill; */
+			hsarg->flush = FALSE;
 			xmms_object_ref (chain);
 
-			last_was_kill = FALSE;
+			/* last_was_kill = FALSE; */
 
-			g_mutex_lock (output->filler_mutex);
 			xmms_ringbuf_hotspot_set (output->filler_buffer, song_changed, song_changed_arg_free, hsarg);
 		}
 
 		xmms_ringbuf_wait_free (output->filler_buffer, sizeof (buf), output->filler_mutex);
 
-		if (output->filler_state != FILLER_RUN) {
+		if (g_atomic_int_get(&output->new_filler_state) != FILLER_RUN) {
 			XMMS_DBG ("State changed while waiting...");
 			continue;
 		}
-		g_mutex_unlock (output->filler_mutex);
+		/* g_mutex_unlock (output->filler_mutex); */
 
 		ret = xmms_xform_this_read (chain, buf, sizeof (buf), &err);
 
-		g_mutex_lock (output->filler_mutex);
+		/* g_mutex_lock (output->filler_mutex); */
 
 		if (ret > 0) {
 			gint skip = MIN (ret, output->toskip);
@@ -551,12 +569,12 @@ xmms_output_filler (void *arg)
 			chain = NULL;
 			if (!xmms_playlist_advance (output->playlist)) {
 				XMMS_DBG ("End of playlist");
-				output->filler_state = FILLER_STOP;
+				output->new_internal_filler_state = FILLER_STOP;
 			}
 		}
 
 	}
-	g_mutex_unlock (output->filler_mutex);
+	/* g_mutex_unlock (output->filler_mutex); */
 	return NULL;
 }
 
@@ -571,20 +589,24 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 	g_return_val_if_fail (output, -1);
 	g_return_val_if_fail (buffer, -1);
 
-	g_mutex_lock (output->filler_mutex);
-	xmms_ringbuf_wait_used (output->filler_buffer, len, output->filler_mutex);
+	/* g_mutex_lock (output->filler_mutex); */
+	/* xmms_ringbuf_wait_used (output->filler_buffer, len, output->filler_mutex); */
 	ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
 	if (ret == 0 && xmms_ringbuf_iseos (output->filler_buffer)) {
 		xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_STOP);
-		g_mutex_unlock (output->filler_mutex);
+		/* g_mutex_unlock (output->filler_mutex); */
 		return -1;
 	}
-	g_mutex_unlock (output->filler_mutex);
+	/* g_mutex_unlock (output->filler_mutex); */
 
+	/* The following could be moved to its own thread so we are only doing here what probably should be done
+		 but its not known to me to be a dealbreaker, however it emits an object and does a bunch of stuff
+		 that could make low latency jack use go sour.
+	*/
 	update_playtime (output, ret);
 
 	if (ret < len) {
-		XMMS_DBG ("Underrun %d of %d (%d)", ret, len, xmms_sample_frame_size_get (output->format));
+		XMMS_DBG ("Underrun Got only %d bytes of %d wanted. Sample Format: (%d) Total Underruns: (%d)", ret, len, xmms_sample_frame_size_get (output->format), output->buffer_underruns++);
 
 		if ((ret % xmms_sample_frame_size_get (output->format)) != 0) {
 			xmms_log_error ("***********************************");
@@ -592,10 +614,11 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 			xmms_log_error ("*  you probably hear noise now :)");
 			xmms_log_error ("***********************************");
 		}
-		output->buffer_underruns++;
+
 	}
 
-	output->bytes_written += ret;
+	/* this is never used so why bother until there is a use */
+	/* output->bytes_written += ret; */
 
 	return ret;
 }
@@ -991,6 +1014,9 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 
 	output->filler_mutex = g_mutex_new ();
 	output->filler_state = FILLER_STOP;
+	g_atomic_int_set(&output->new_filler_state, FILLER_STOP);
+	output->new_filler_state = FILLER_STOP;
+	output->new_internal_filler_state = 10;
 	output->filler_state_cond = g_cond_new ();
 	output->filler_buffer = xmms_ringbuf_new (size);
 	output->filler_thread = g_thread_create (xmms_output_filler, output, TRUE, NULL);
