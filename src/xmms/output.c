@@ -161,6 +161,9 @@ struct xmms_output_St {
 
 	/** Internal status, tells which state the
 	    output really is in */
+
+ /* This mutex isn't to bad -D */
+
 	GMutex *status_mutex;
 	guint status;
 
@@ -261,6 +264,10 @@ update_playtime (xmms_output_t *output, int advance)
 	/* g_mutex_unlock (output->playtime_mutex); */
 
 	gint played = g_atomic_int_get(&output->played);
+
+	/* Do we really need the following? Do the vis clients ever even read this? jack doesn't implement it .. 
+		 perhaps it should only be enabled if vis clients are detected? .. Ill leave it alone for now.. 
+		 but it seems it could be wasting alot of cpu cycles every on every xmms2_output_read */
 
 	buffersize = xmms_output_plugin_method_latency_get (output->plugin, output);
 
