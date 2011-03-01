@@ -409,7 +409,7 @@ xmms_output_filler_seek_state (xmms_output_t *output, guint32 samples)
 	/* g_mutex_lock (output->filler_mutex); */
 	g_atomic_int_set(&output->new_filler_state, FILLER_SEEK);
 	output->filler_seek = samples;
-	g_cond_signal (output->filler_state_cond);
+	//g_cond_signal (output->filler_state_cond);
 	/* g_mutex_unlock (output->filler_mutex); */
 }
 
@@ -434,8 +434,9 @@ xmms_output_filler (void *arg)
 			output->new_internal_filler_state = 10;
 		} else {
 			new_filler_state = g_atomic_int_get(&output->new_filler_state);
-			if(output->filler_state != new_filler_state) {
+			if((output->filler_state != new_filler_state) && (new_filler_state < 10)) {
 				output->filler_state = new_filler_state;
+				g_atomic_int_set(&output->new_filler_state, 10);
 				continue;
 			}
 		}
@@ -485,9 +486,10 @@ xmms_output_filler (void *arg)
 	
 				/* Why clear a perfectly good buffer? :P */
 				/* xmms_ringbuf_clear (output->filler_buffer); */
-				//xmms_ringbuf_hotspot_set (output->filler_buffer, seek_done, NULL, output);
+				xmms_ringbuf_hotspot_set (output->filler_buffer, seek_done, NULL, output);
 			}
 			output->new_internal_filler_state = FILLER_RUN;
+			continue;
 		}
 
 		if (!chain) {
@@ -539,8 +541,8 @@ xmms_output_filler (void *arg)
 		}
 
 		xmms_ringbuf_wait_free (output->filler_buffer, sizeof (buf), output->filler_mutex);
-
-		if (g_atomic_int_get(&output->new_filler_state) != FILLER_RUN) {
+		new_filler_state = g_atomic_int_get(&output->new_filler_state);
+		if ((new_filler_state < 10) && (new_filler_state != FILLER_RUN)) {
 			XMMS_DBG ("State changed while waiting...");
 			continue;
 		}
