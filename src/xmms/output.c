@@ -389,7 +389,7 @@ xmms_output_filler_state_nolock (xmms_output_t *output, xmms_output_filler_state
 	g_atomic_int_set(&output->new_filler_state, state);
 	g_cond_signal (output->filler_state_cond);
 	if (state == FILLER_QUIT || state == FILLER_STOP) { /* || state == FILLER_KILL) { */
-		/* xmms_ringbuf_clear (output->filler_buffer); */
+		xmms_ringbuf_clear (output->filler_buffer);
 	}
 	if (state != FILLER_STOP) {
 		/* xmms_ringbuf_set_eos (output->filler_buffer, FALSE); */
@@ -703,6 +703,7 @@ xmms_playback_client_start (xmms_output_t *output, xmms_error_t *err)
 	g_return_if_fail (output);
 
 	xmms_output_filler_state (output, FILLER_RUN);
+	xmms_ringbuf_wait_used (output->filler_buffer, (32768 / 2), output->filler_mutex);
 	if (!xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_PLAY)) {
 		xmms_output_filler_state (output, FILLER_STOP);
 		xmms_error_set (err, XMMS_ERROR_GENERIC, "Could not start playback");
