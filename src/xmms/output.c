@@ -152,10 +152,13 @@ struct xmms_output_St {
 	GThread *filler_thread;
 	GMutex *filler_mutex;
 
+	GMutex *pointless_mutex;
+
 	GCond *filler_state_cond;
 	xmms_output_filler_state_t filler_state;
 	xmms_output_filler_state_t new_filler_state;
 	xmms_output_filler_state_t new_internal_filler_state;
+	xmms_output_filler_state_t filler_state_store;
 
 	xmms_ringbuf_t *filler_buffer;
 	guint32 filler_seek;
@@ -353,7 +356,7 @@ song_changed (void *data)
 		          xmms_sample_name_get (fmt), rate, chn);
 
 		xmms_output_filler_state_nolock (arg->output, FILLER_STOP);
-		xmms_ringbuf_set_eos (arg->output->filler_buffer, TRUE);
+		/* xmms_ringbuf_set_eos (arg->output->filler_buffer, TRUE); */
 		return FALSE;
 	}
 
@@ -387,12 +390,18 @@ static void
 xmms_output_filler_state_nolock (xmms_output_t *output, xmms_output_filler_state_t state)
 {
 	g_atomic_int_set(&output->new_filler_state, state);
-	g_cond_signal (output->filler_state_cond);
+	if (state == FILLER_QUIT || state == FILLER_RUN) {
+		g_cond_signal (output->filler_state_cond);
+	}
 	if (state == FILLER_QUIT || state == FILLER_STOP) { /* || state == FILLER_KILL) { */
-		xmms_ringbuf_clear (output->filler_buffer);
+		/* xmms_ringbuf_clear (output->filler_buffer); */
 	}
 	if (state != FILLER_STOP) {
 		/* xmms_ringbuf_set_eos (output->filler_buffer, FALSE); */
+	}
+	if (state == FILLER_STOP) {
+		/* when we stop we need to eos so that the write wait gets woked up */
+		xmms_ringbuf_set_eos (output->filler_buffer, TRUE);
 	}
 }
 
@@ -440,24 +449,44 @@ xmms_output_filler (void *arg)
 				continue;
 			}
 		}
+		
+		// Debug
+		if (output->filler_state != g_atomic_int_get(&output->filler_state_store))
+			g_atomic_int_set(&output->filler_state_store, output->filler_state);
+
 
 		if (output->filler_state == FILLER_STOP) {
 			if (chain) {
+				XMMS_DBG ("Filler Stopped chain destroyed");
 				xmms_object_unref (chain);
 				chain = NULL;
 			}
-			//xmms_ringbuf_set_eos (output->filler_buffer, TRUE);
+			XMMS_DBG ("Filler Stopped and waiting");
+			//xmms_ringbuf_set_eos (output->filler_buffer, TRUE); /* set the now as the reader may still be reading */
 			g_cond_wait (output->filler_state_cond, output->filler_mutex);
+			new_filler_state = g_atomic_int_get(&output->new_filler_state);
+			if (new_filler_state == FILLER_RUN) {
+					XMMS_DBG ("Stopped filler awoken and preparing to run");
+					xmms_ringbuf_clear (output->filler_buffer); /* safe to clear now as reader should have been long stopped */
+					xmms_ringbuf_set_eos (output->filler_buffer, FALSE); 
+			}
+			if (new_filler_state == FILLER_QUIT) {
+				XMMS_DBG ("Stopped filler awoken and preparing to quit");
+				//if(output->filler_state == FILLER_STOP)
+					g_mutex_unlock (output->filler_mutex);
+			}
 			last_was_kill = FALSE;
 			continue;
 		}
 		if (output->filler_state == FILLER_KILL) {
 			if (chain) {
+				XMMS_DBG ("Filler Kill, chain destroyed");
 				xmms_object_unref (chain);
 				chain = NULL;
 				output->new_internal_filler_state = FILLER_RUN;
 				last_was_kill = TRUE; /* last was seek or jump actually */
 			} else {
+				XMMS_DBG ("Filler Kill without chain requested, going to stop mode");
 				output->new_internal_filler_state = FILLER_STOP;
 			}
 			continue;
@@ -493,6 +522,7 @@ xmms_output_filler (void *arg)
 		}
 
 		if (!chain) {
+			XMMS_DBG ("No Chain at this time");
 			xmms_medialib_entry_t entry;
 			xmms_output_song_changed_arg_t *hsarg;
 			xmms_medialib_session_t *session;
@@ -509,6 +539,7 @@ xmms_output_filler (void *arg)
 
 			chain = xmms_xform_chain_setup (entry, output->format_list, FALSE);
 			if (!chain) {
+				XMMS_DBG ("New chain failed to get setup");
 				session = xmms_medialib_begin_write ();
 				if (xmms_medialib_entry_property_get_int (session, entry, XMMS_MEDIALIB_ENTRY_PROPERTY_STATUS) == XMMS_MEDIALIB_ENTRY_STATUS_NEW) {
 					xmms_medialib_end (session);
@@ -522,6 +553,8 @@ xmms_output_filler (void *arg)
 				if (!xmms_playlist_advance (output->playlist)) {
 					XMMS_DBG ("End of playlist");
 					output->new_internal_filler_state = FILLER_STOP;
+				} else {
+					XMMS_DBG ("Playlist Advanced");
 				}
 				/* g_mutex_lock (output->filler_mutex); */
 				continue;
@@ -536,7 +569,7 @@ xmms_output_filler (void *arg)
 			xmms_object_ref (chain);
 
 			/* last_was_kill = FALSE; */
-
+			XMMS_DBG ("New chain is set to go");
 			xmms_ringbuf_hotspot_set (output->filler_buffer, song_changed, song_changed_arg_free, hsarg);
 		}
 
@@ -553,6 +586,7 @@ xmms_output_filler (void *arg)
 		/* g_mutex_lock (output->filler_mutex); */
 
 		if (ret > 0) {
+			/* XMMS_DBG ("Got samples from chain and writing to output buffer"); */
 			gint skip = MIN (ret, output->toskip);
 
 			output->toskip -= skip;
@@ -564,6 +598,7 @@ xmms_output_filler (void *arg)
 			}
 		} else {
 			if (ret == -1) {
+				XMMS_DBG ("Failed to get samples from chain");
 				/* print error */
 				xmms_error_reset (&err);
 			}
@@ -577,6 +612,7 @@ xmms_output_filler (void *arg)
 
 	}
 	/* g_mutex_unlock (output->filler_mutex); */
+	XMMS_DBG ("Filler thread go bye bye");
 	return NULL;
 }
 
@@ -608,7 +644,7 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 	update_playtime (output, ret);
 
 	if (ret < len) {
-		XMMS_DBG ("Underrun Got only %d bytes of %d wanted. Sample Format: (%d) Total Underruns: (%d)", ret, len, xmms_sample_frame_size_get (output->format), output->buffer_underruns++);
+		XMMS_DBG ("Underrun Got only %d bytes of %d wanted. Sample Format: (%d) Total Underruns: (%d) Filler State: %d", ret, len, xmms_sample_frame_size_get (output->format), output->buffer_underruns++, g_atomic_int_get(&output->filler_state_store));
 
 		if ((ret % xmms_sample_frame_size_get (output->format)) != 0) {
 			xmms_log_error ("***********************************");
@@ -701,9 +737,9 @@ static void
 xmms_playback_client_start (xmms_output_t *output, xmms_error_t *err)
 {
 	g_return_if_fail (output);
-
 	xmms_output_filler_state (output, FILLER_RUN);
-	xmms_ringbuf_wait_used (output->filler_buffer, (32768 / 2), output->filler_mutex);
+	xmms_ringbuf_wait_used (output->filler_buffer, (32768 / 2), output->pointless_mutex);
+	//g_mutex_unlock (output->filler_mutex);
 	if (!xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_PLAY)) {
 		xmms_output_filler_state (output, FILLER_STOP);
 		xmms_error_set (err, XMMS_ERROR_GENERIC, "Could not start playback");
@@ -926,6 +962,14 @@ xmms_output_destroy (xmms_object_t *object)
 		output->monitor_volume_thread = NULL;
 	}
 
+
+	/* If we are in a STOPPED state, just need to set next state to QUIT and signal
+		 If we are in a RUNNING state, either we will pick the new state up on next
+		 cycle or we are waiting on ringbuf free cond, which will get signal when
+		 we set ringbuf to eos
+
+	*/
+
 	xmms_output_filler_state (output, FILLER_QUIT);
 	g_thread_join (output->filler_thread);
 
@@ -936,11 +980,16 @@ xmms_output_destroy (xmms_object_t *object)
 	xmms_output_format_list_clear (output);
 
 	xmms_object_unref (output->playlist);
-
+		XMMS_DBG ("Freein Status Mutex");
 	g_mutex_free (output->status_mutex);
 	/* g_mutex_free (output->playtime_mutex); */
+		XMMS_DBG ("Freein Pointless Mutex");
+	g_mutex_unlock (output->pointless_mutex); 
+	g_mutex_free (output->pointless_mutex);
+		XMMS_DBG ("Freein Filler Mutex");
 	g_mutex_free (output->filler_mutex);
 	g_cond_free (output->filler_state_cond);
+		XMMS_DBG ("Freein Ring Buffer");
 	xmms_ringbuf_destroy (output->filler_buffer);
 
 	xmms_ipc_broadcast_unregister ( XMMS_IPC_SIGNAL_PLAYBACK_VOLUME_CHANGED);
@@ -1015,10 +1064,13 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	size = xmms_config_property_get_int (prop);
 	XMMS_DBG ("Using buffersize %d", size);
 
+	output->pointless_mutex = g_mutex_new ();
+	g_mutex_lock (output->pointless_mutex); /* because it has to be locked or unlocked to be freed */
+
 	output->filler_mutex = g_mutex_new ();
+	g_mutex_lock (output->filler_mutex); /* because it has to be locked or unlocked to be freed */
 	output->filler_state = FILLER_STOP;
-	g_atomic_int_set(&output->new_filler_state, FILLER_STOP);
-	output->new_filler_state = FILLER_STOP;
+	g_atomic_int_set(&output->new_filler_state, 10);
 	output->new_internal_filler_state = 10;
 	output->filler_state_cond = g_cond_new ();
 	output->filler_buffer = xmms_ringbuf_new (size);
