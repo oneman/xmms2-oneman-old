@@ -450,7 +450,7 @@ xmms_output_plugin_writer (gpointer data)
 
 			g_mutex_unlock (plugin->write_mutex);
 
-			ret = xmms_output_read (output, buffer, 4096);
+			ret = xmms_output_read_wait (output, buffer, 4096);
 			if (ret > 0) {
 				xmms_error_t err;
 

@@ -299,6 +299,8 @@ void xmms_output_stream_type_add (xmms_output_t *output, ...);
 /**
  * Read a number of bytes of data from the output buffer into a buffer.
  *
+ * This function may return less bytes than you asked for!
+ *
  * This is typically used when the output plugin is event driven, and is
  * then used when the status is set to playing, and the output needs more
  * data from xmms2 to write to the soundcard.
@@ -309,6 +311,23 @@ void xmms_output_stream_type_add (xmms_output_t *output, ...);
  * @return the number of bytes read
  */
 gint xmms_output_read (xmms_output_t *output, char *buffer, gint len);
+
+
+/**
+ * Read a number of bytes of data from the output buffer into a buffer.
+ *
+ * This function will block until it has all the bytes you asked for!
+ *
+ * This is typically used when the output plugin is event driven, and is
+ * then used when the status is set to playing, and the output needs more
+ * data from xmms2 to write to the soundcard.
+ *
+ * @param output an output object
+ * @param buffer a buffer to store the read data in
+ * @param len the number of bytes to read
+ * @return the number of bytes read
+ */
+gint xmms_output_read_wait (xmms_output_t *output, char *buffer, gint len);
 
 /**
  * Set an error.

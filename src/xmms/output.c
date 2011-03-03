@@ -660,6 +660,13 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 	return ret;
 }
 
+gint
+xmms_output_read_wait (xmms_output_t *output, char *buffer, gint len)
+{
+	xmms_ringbuf_wait_used (output->filler_buffer, len, output->filler_mutex);
+	return xmms_output_read (output, buffer, len);
+}
+
 xmms_config_property_t *
 xmms_output_config_property_register (xmms_output_t *output, const gchar *name, const gchar *default_value, xmms_object_handler_t cb, gpointer userdata)
 {
