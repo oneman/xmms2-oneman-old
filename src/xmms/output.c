@@ -462,14 +462,10 @@ xmms_output_filler (void *arg)
 				chain = NULL;
 			}
 			XMMS_DBG ("Filler Stopped and waiting");
-			// the following is set from the xmms_output_filler_state func
-			//xmms_ringbuf_set_eos (output->filler_buffer, TRUE); /* set the now as the reader may still be reading */
 			g_cond_wait (output->filler_state_cond, output->filler_mutex);
 			new_filler_state = g_atomic_int_get(&output->new_filler_state);
 			if (new_filler_state == FILLER_RUN) {
 					XMMS_DBG ("Stopped filler awoken and preparing to run");
-					xmms_ringbuf_clear (output->filler_buffer); /* safe to clear now as reader should have been long stopped */
-					xmms_ringbuf_set_eos (output->filler_buffer, FALSE); 
 			}
 			if (new_filler_state == FILLER_QUIT) {
 				XMMS_DBG ("Stopped filler awoken and preparing to quit");
@@ -537,7 +533,7 @@ xmms_output_filler (void *arg)
 				/* g_mutex_lock (output->filler_mutex); */
 				continue;
 			}
-
+			XMMS_DBG ("I happened to happen!");
 			chain = xmms_xform_chain_setup (entry, output->format_list, FALSE);
 			if (!chain) {
 				XMMS_DBG ("New chain failed to get setup");
@@ -560,7 +556,7 @@ xmms_output_filler (void *arg)
 				/* g_mutex_lock (output->filler_mutex); */
 				continue;
 			}
-
+			XMMS_DBG ("Got to here!");
 			hsarg = g_new0 (xmms_output_song_changed_arg_t, 1);
 			hsarg->output = output;
 			hsarg->chain = chain;
@@ -592,10 +588,9 @@ xmms_output_filler (void *arg)
 
 			output->toskip -= skip;
 			if (ret > skip) {
-				xmms_ringbuf_write_wait (output->filler_buffer,
+				xmms_ringbuf_write (output->filler_buffer,
 				                         buf + skip,
-				                         ret - skip,
-				                         output->filler_mutex);
+				                         ret - skip);
 			}
 		} else {
 			if (ret == -1) {
@@ -741,8 +736,12 @@ static void
 xmms_playback_client_start (xmms_output_t *output, xmms_error_t *err)
 {
 	g_return_if_fail (output);
+	xmms_ringbuf_clear (output->filler_buffer); /* safe to clear now as reader should have been long stopped */
+	xmms_ringbuf_set_eos (output->filler_buffer, FALSE); 
 	xmms_output_filler_state (output, FILLER_RUN);
+		XMMS_DBG ("its me ");
 	xmms_ringbuf_wait_used (output->filler_buffer, (32768 / 2), output->pointless_mutex);
+		XMMS_DBG ("now me");
 	//g_mutex_unlock (output->filler_mutex);
 	if (!xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_PLAY)) {
 		xmms_output_filler_state (output, FILLER_STOP);
