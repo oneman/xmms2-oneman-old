@@ -462,6 +462,7 @@ xmms_output_filler (void *arg)
 				chain = NULL;
 			}
 			XMMS_DBG ("Filler Stopped and waiting");
+			// the following is set from the xmms_output_filler_state func
 			//xmms_ringbuf_set_eos (output->filler_buffer, TRUE); /* set the now as the reader may still be reading */
 			g_cond_wait (output->filler_state_cond, output->filler_mutex);
 			new_filler_state = g_atomic_int_get(&output->new_filler_state);
@@ -602,11 +603,14 @@ xmms_output_filler (void *arg)
 				/* print error */
 				xmms_error_reset (&err);
 			}
+			XMMS_DBG ("Got nothing from chain, destroying it");
 			xmms_object_unref (chain);
 			chain = NULL;
 			if (!xmms_playlist_advance (output->playlist)) {
 				XMMS_DBG ("End of playlist");
 				output->new_internal_filler_state = FILLER_STOP;
+			} else {
+				XMMS_DBG ("Advanced playlist");
 			}
 		}
 

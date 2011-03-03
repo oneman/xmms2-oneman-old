@@ -432,7 +432,7 @@ xmms_ringbuf_set_eos (xmms_ringbuf_t *ringbuf, gboolean eos)
 
 	if (eos) {
 		g_cond_broadcast (ringbuf->eos_cond);
-		g_cond_broadcast (ringbuf->used_cond);
+		//g_cond_broadcast (ringbuf->used_cond);
 		g_cond_broadcast (ringbuf->free_cond);
 	}
 }
