@@ -85,7 +85,7 @@ typedef enum xmms_output_filler_state_E {
 static void xmms_playback_client_volume_set (xmms_output_t *output, const gchar *channel, gint32 volume, xmms_error_t *error);
 static GTree *xmms_playback_client_volume_get (xmms_output_t *output, xmms_error_t *error);
 static void xmms_output_filler_state (xmms_output_t *output, xmms_output_filler_state_t state);
-static void xmms_output_filler_state_nolock (xmms_output_t *output, xmms_output_filler_state_t state);
+
 
 static void xmms_volume_map_init (xmms_volume_map_t *vl);
 static void xmms_volume_map_free (xmms_volume_map_t *vl);
@@ -356,7 +356,7 @@ song_changed (void *data)
 		XMMS_DBG ("Couldn't set format %s/%d/%d, stopping filler..",
 		          xmms_sample_name_get (fmt), rate, chn);
 
-		xmms_output_filler_state_nolock (arg->output, FILLER_STOP);
+		xmms_output_filler_state (arg->output, FILLER_STOP);
 		/* xmms_ringbuf_set_eos (arg->output->filler_buffer, TRUE); */
 		return FALSE;
 	}
@@ -387,8 +387,9 @@ seek_done (void *data)
 	return TRUE;
 }
 
+
 static void
-xmms_output_filler_state_nolock (xmms_output_t *output, xmms_output_filler_state_t state)
+xmms_output_filler_state (xmms_output_t *output, xmms_output_filler_state_t state)
 {
 	g_atomic_int_set(&output->new_filler_state, state);
 	if (state == FILLER_QUIT || state == FILLER_RUN) {
@@ -410,23 +411,6 @@ xmms_output_filler_state_nolock (xmms_output_t *output, xmms_output_filler_state
 		output->tickle_on_resume = TRUE;
 		
 	}
-}
-
-static void
-xmms_output_filler_state (xmms_output_t *output, xmms_output_filler_state_t state)
-{
-	/* g_mutex_lock (output->filler_mutex); */
-	xmms_output_filler_state_nolock (output, state);
-	/* g_mutex_unlock (output->filler_mutex); */
-}
-static void
-xmms_output_filler_seek_state (xmms_output_t *output, guint32 samples)
-{
-	/* g_mutex_lock (output->filler_mutex); */
-	g_atomic_int_set(&output->new_filler_state, FILLER_SEEK);
-	output->filler_seek = samples;
-	//g_cond_signal (output->filler_state_cond);
-	/* g_mutex_unlock (output->filler_mutex); */
 }
 
 static void *
@@ -743,7 +727,11 @@ xmms_playback_client_seeksamples (xmms_output_t *output, gint32 samples, gint32 
 	}
 
 	/* "just" tell filler */
-	xmms_output_filler_seek_state (output, samples);
+
+ // should be moved into a filler state command
+
+	g_atomic_int_set(&output->new_filler_state, FILLER_SEEK);
+	output->filler_seek = samples;
 }
 
 static void
