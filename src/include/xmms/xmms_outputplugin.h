@@ -341,7 +341,7 @@ gint xmms_output_read_wait (xmms_output_t *output, char *buffer, gint len);
  * @param len the number of bytes to read
  * @return the number of bytes read
  */
-gint xmms_output_bytes_available (xmms_output_t *output);
+guint xmms_output_bytes_available (xmms_output_t *output);
 
 /**
  * Set an error.

@@ -114,12 +114,20 @@ struct xmms_output_St {
 		 13.5~ hours at 44100, a corner case for a future date */ 
 	gint played;
 	gint played_time;
-
 	
 	xmms_medialib_entry_t current_entry;
 	guint toskip;
 
 	/* */
+
+	GAsyncQueue *filler_messages;
+
+	int	FILLER_STOP;
+	int	FILLER_RUN;
+	int	FILLER_QUIT;
+	int	FILLER_KILL;
+	int	FILLER_SEEK;
+
 	GThread *filler_thread;
 	GMutex *filler_mutex;
 
@@ -139,8 +147,6 @@ struct xmms_output_St {
 	/** Internal status, tells which state the
 	    output really is in */
 
- /* This mutex isn't to bad -D */
-
 	GMutex *status_mutex;
 	guint status;
 
@@ -150,12 +156,6 @@ struct xmms_output_St {
 	GList *format_list;
 	/** Active format */
 	xmms_stream_type_t *format;
-
-	/**
-	 * Number of bytes totaly written to output driver,
-	 * this is only for statistics...
-	 */
-	guint64 bytes_written;
 
 	/**
 	 * How many times didn't we have enough data in the buffer?
@@ -350,26 +350,70 @@ xmms_output_filler_state (xmms_output_t *output, xmms_output_filler_state_t stat
 {
 
 	/* need to account for seek during pause and (in the output thread) end of playlist status.. */ 
+	
+	if (state == FILLER_SEEK) {
+		g_async_queue_push (output->filler_messages, &output->FILLER_SEEK);
+	}
 
-	g_atomic_int_set(&output->new_filler_state, state);
-	if (state == FILLER_QUIT || state == FILLER_RUN) {
-		g_cond_signal (output->filler_state_cond);
+	if (state == FILLER_RUN) {
+		g_async_queue_push (output->filler_messages, &output->FILLER_RUN);
 	}
-	if (state == FILLER_QUIT || state == FILLER_STOP) { 
+	if (state == FILLER_QUIT) { 
+		xmms_ringbuf_set_eos (output->filler_buffer, TRUE);
+		g_async_queue_push (output->filler_messages, &output->FILLER_QUIT);
 	}
-	if (state != FILLER_STOP) {
 
-	}
 	if (state == FILLER_STOP) {
 		/* when we stop we need to eos so that the write wait gets woked up */
 		xmms_ringbuf_set_eos (output->filler_buffer, TRUE);
+		g_async_queue_push (output->filler_messages, &output->FILLER_STOP);
 	}
+
+	if ((state == FILLER_KILL) && (output->status != XMMS_PLAYBACK_STATUS_PAUSE)) {
+		/* when we stop we need to eos so that the write wait gets woked up */
+		xmms_ringbuf_set_eos (output->filler_buffer, TRUE);
+		g_async_queue_push (output->filler_messages, &output->FILLER_KILL);
+	}
+
 	if ((state == FILLER_KILL) && (output->status == XMMS_PLAYBACK_STATUS_PAUSE)) {
 		/* this is a manual track jump, when paused, this tickles the filler thread to
 			 bring up the new chain */
+		g_async_queue_push (output->filler_messages, &output->FILLER_KILL);
 		output->tickle_on_resume = TRUE;
-		
 	}
+
+}
+
+static gint
+get_output_filler_command_wait(GAsyncQueue *filler_messages) {
+
+	gpointer new_filler_state_pointer;
+	int ret = -1;
+
+	new_filler_state_pointer = g_async_queue_pop(filler_messages);
+
+	if(new_filler_state_pointer != NULL) {
+		return *(int *)new_filler_state_pointer;
+	} else { 
+		return ret;
+	}
+
+}
+
+static gint
+get_output_filler_command(GAsyncQueue *filler_messages) {
+
+	gpointer new_filler_state_pointer;
+	int ret = -1;
+
+	new_filler_state_pointer = g_async_queue_try_pop(filler_messages);
+
+	if(new_filler_state_pointer != NULL) {
+		return *(int *)new_filler_state_pointer;
+	} else { 
+		return ret;
+	}
+
 }
 
 static void *
@@ -391,10 +435,9 @@ xmms_output_filler (void *arg)
 			output->filler_state = output->new_internal_filler_state;
 			output->new_internal_filler_state = 10;
 		} else {
-			new_filler_state = g_atomic_int_get(&output->new_filler_state);
-			if((output->filler_state != new_filler_state) && (new_filler_state < 10)) {
+			new_filler_state = get_output_filler_command(output->filler_messages);
+			if((new_filler_state != -1) && (output->filler_state != new_filler_state)) {
 				output->filler_state = new_filler_state;
-				g_atomic_int_set(&output->new_filler_state, 10);
 				continue;
 			}
 		}
@@ -411,12 +454,12 @@ xmms_output_filler (void *arg)
 				chain = NULL;
 			}
 			XMMS_DBG ("Output filler stopped and waiting...");
-			g_cond_wait (output->filler_state_cond, output->filler_mutex);
-			new_filler_state = g_atomic_int_get(&output->new_filler_state);
-			if (new_filler_state == FILLER_RUN) {
+			output->filler_state = get_output_filler_command_wait(output->filler_messages);
+				XMMS_DBG ("got new statex: %d", new_filler_state );
+			if (output->filler_state == FILLER_RUN) {
 					XMMS_DBG ("Stopped Output filler awakens and prepares to run");
 			}
-			if (new_filler_state == FILLER_QUIT) {
+			if (output->filler_state == FILLER_QUIT) {
 				XMMS_DBG ("Stopped Output filler awakens and prepares to quit");
 					g_mutex_unlock (output->filler_mutex);
 			}
@@ -424,6 +467,7 @@ xmms_output_filler (void *arg)
 			continue;
 		}
 		if ((output->filler_state == FILLER_KILL) || (output->tickle_on_resume == TRUE)) {
+			xmms_ringbuf_set_eos (output->filler_buffer, FALSE);
 			output->tickle_on_resume = FALSE;
 			if (chain) {
 				XMMS_DBG ("Done with that track, chain destroyed");
@@ -512,17 +556,19 @@ xmms_output_filler (void *arg)
 			xmms_ringbuf_hotspot_set (output->filler_buffer, song_changed, song_changed_arg_free, hsarg);
 		}
 
-		xmms_ringbuf_wait_free (output->filler_buffer, sizeof (buf), output->filler_mutex);
-		new_filler_state = g_atomic_int_get(&output->new_filler_state);
-		if ((new_filler_state < 10) && (new_filler_state != FILLER_RUN)) {
+
+		ret = xmms_xform_this_read (chain, buf, sizeof (buf), &err);
+
+		if (ret > 0) {
+
+		xmms_ringbuf_wait_free (output->filler_buffer, ret, output->filler_mutex);
+		new_filler_state = get_output_filler_command(output->filler_messages);
+		if ((new_filler_state != -1) && (new_filler_state != FILLER_RUN)) {
+			output->filler_state = new_filler_state;
 			XMMS_DBG ("State changed while waiting...");
 			continue;
 		}
 
-		ret = xmms_xform_this_read (chain, buf, sizeof (buf), &err);
-
-
-		if (ret > 0) {
 			/* XMMS_DBG ("Got samples from chain and writing to output buffer"); */
 			gint skip = MIN (ret, output->toskip);
 
@@ -579,6 +625,7 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 	update_playtime (output, ret);
 
 	if (ret < len) {
+		// This will lie to you on the last moment of a song because the hotspot makes the read need to be run twice, there wasn't an underrun
 		XMMS_DBG ("Underrun Got only %d bytes of %d wanted. Sample Format: (%d) Total Underruns: (%d) Filler State: %d", ret, len, xmms_sample_frame_size_get (output->format), output->buffer_underruns++, g_atomic_int_get(&output->filler_state_store));
 
 		if ((ret % xmms_sample_frame_size_get (output->format)) != 0) {
@@ -600,7 +647,7 @@ xmms_output_read_wait (xmms_output_t *output, char *buffer, gint len)
 	return xmms_output_read (output, buffer, len);
 }
 
-gint
+guint
 xmms_output_bytes_available (xmms_output_t *output)
 {
 	return xmms_ringbuf_bytes_used(output->filler_buffer);
@@ -675,9 +722,9 @@ xmms_playback_client_seeksamples (xmms_output_t *output, gint32 samples, gint32 
 	}
 
  // should be moved into a filler state command
-
-	g_atomic_int_set(&output->new_filler_state, FILLER_SEEK);
 	output->filler_seek = samples;
+	xmms_output_filler_state (output, FILLER_SEEK);
+
 }
 
 static void
@@ -916,6 +963,9 @@ xmms_output_destroy (xmms_object_t *object)
 	xmms_output_filler_state (output, FILLER_QUIT);
 	g_thread_join (output->filler_thread);
 
+	g_async_queue_unref (output->filler_messages);
+
+
 	if (output->plugin) {
 		xmms_output_plugin_method_destroy (output->plugin, output);
 		xmms_object_unref (output->plugin);
@@ -1006,12 +1056,21 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	size = xmms_config_property_get_int (prop);
 	XMMS_DBG ("Using buffersize %d", size);
 
+	output->filler_messages = g_async_queue_new ();
+
 	output->pointless_mutex = g_mutex_new ();
 	g_mutex_lock (output->pointless_mutex); /* because it has to be locked or unlocked to be freed */
 
 	output->filler_mutex = g_mutex_new ();
 	g_mutex_lock (output->filler_mutex); /* because it has to be locked or unlocked to be freed */
 	output->filler_state = FILLER_STOP;
+
+	output->FILLER_STOP = 0;
+	output->FILLER_RUN = 1;
+	output->FILLER_QUIT = 2;
+	output->FILLER_KILL = 3;
+	output->FILLER_SEEK = 4;
+
 	g_atomic_int_set(&output->new_filler_state, 10);
 	output->new_internal_filler_state = 10;
 	output->tickle_on_resume = FALSE;

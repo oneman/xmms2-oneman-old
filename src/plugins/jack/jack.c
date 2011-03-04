@@ -266,6 +266,7 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 			t = MIN (toread * CHANNELS * sizeof (xmms_samplefloat_t),
 			         sizeof (tbuf));
 
+
 			if(xmms_output_bytes_available(output) < t) {
 				XMMS_DBG ("Jack Output Underun! Not Enough Bytes Availible.");
 				break;
@@ -279,8 +280,8 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 			}
 
 			if (res < t) {
-				XMMS_DBG ("Jack Output Underun! Not Enough Bytes Read!");
-				break;
+				// On the Last moment of a song, but not on a track jump, read will cross a hotspot
+				// and need to run twice, Just thought I'd mention that
 			}
 
 			res /= CHANNELS * sizeof (xmms_samplefloat_t);
