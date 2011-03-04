@@ -266,10 +266,20 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 			t = MIN (toread * CHANNELS * sizeof (xmms_samplefloat_t),
 			         sizeof (tbuf));
 
+			if(xmms_output_bytes_available(output) < t) {
+				XMMS_DBG ("Jack Output Underun! Not Enough Bytes Availible.");
+				break;
+			}
+
 			res = xmms_output_read (output, (gchar *)tbuf, t);
 
 			if (res <= 0) {
 				XMMS_DBG ("output_read returned %d", res);
+				break;
+			}
+
+			if (res < t) {
+				XMMS_DBG ("Jack Output Underun! Not Enough Bytes Read!");
 				break;
 			}
 

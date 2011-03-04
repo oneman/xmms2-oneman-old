@@ -58,10 +58,10 @@ static gint xmms_playback_client_current_id (xmms_output_t *output, xmms_error_t
 static gint32 xmms_playback_client_playtime (xmms_output_t *output, xmms_error_t *err);
 
 typedef enum xmms_output_filler_state_E {
-	FILLER_STOP,		/* Pauses filler thread when stopped */
-	FILLER_RUN,
+	FILLER_STOP,		/* Stops filling, and dumps the buffer. */
+	FILLER_RUN,			/* Filler is running, but often _waiting on ringbuf to have free space */
 	FILLER_QUIT,		/* This actually ends the output filler thread */	
-	FILLER_KILL,		/* This was used to throw away the output buffer in case of a manual track change */
+	FILLER_KILL,		/* This was used to throw away the output buffer in case of a manual track change or tickle the filler to the next track */
 	FILLER_SEEK,
 } xmms_output_filler_state_t;
 
@@ -598,6 +598,12 @@ xmms_output_read_wait (xmms_output_t *output, char *buffer, gint len)
 {
 	xmms_ringbuf_wait_used (output->filler_buffer, len, output->filler_mutex);
 	return xmms_output_read (output, buffer, len);
+}
+
+gint
+xmms_output_bytes_available (xmms_output_t *output)
+{
+	return xmms_ringbuf_bytes_used(output->filler_buffer);
 }
 
 xmms_config_property_t *
