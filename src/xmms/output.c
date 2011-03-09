@@ -379,15 +379,19 @@ static xmms_output_filler_state_t
 xmms_output_filler_check_for_message(xmms_output_t *output) {
 
 	int *new_filler_state_pointer;
+	xmms_output_filler_state_t new_filler_state;
 
 	new_filler_state_pointer = g_async_queue_try_pop(output->filler_messages);
 
 	if(new_filler_state_pointer != NULL) {
-		output->filler_state = new_filler_state_pointer - output->commands;
-		return output->filler_state;
+		new_filler_state = new_filler_state_pointer - output->commands;
+		if(new_filler_state != output->filler_state) {
+			output->filler_state = new_filler_state;
+			return output->filler_state;
+		}
 	}
 
-	return NOOP;
+	return FALSE;
 
 }
 
@@ -430,7 +434,7 @@ xmms_output_filler (void *arg)
 			output->filler_state = output->new_internal_filler_state;
 			output->new_internal_filler_state = NOOP;
 		} else {
-			if(xmms_output_filler_check_for_message(output) != NOOP) {
+			if(xmms_output_filler_check_for_message(output) != FALSE) {
 				XMMS_DBG ("Output Filler Received New State: %d", output->filler_state );
 				continue;
 			}
@@ -612,10 +616,8 @@ xmms_output_filler (void *arg)
 		if (ret > 0) {
 
 			while (xmms_ringbuf_bytes_free(output->filler_buffer) < ret) {
-				if (xmms_output_filler_wait_for_message(output) != RUN) {
-					XMMS_DBG ("State changed while waiting...");
+				if (xmms_output_filler_wait_for_message(output) != RUN)
 					break;
-				}
 			}
 			if(output->filler_state != RUN) {
 				XMMS_DBG ("State changed while waiting...");
