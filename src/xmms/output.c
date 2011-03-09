@@ -614,21 +614,26 @@ xmms_output_filler (void *arg)
 		ret = xmms_xform_this_read (chain, buf, sizeof (buf), &err);
 
 		if (ret > 0) {
+			int wrote;
+			wrote = 0;
 
-			while (xmms_ringbuf_bytes_free(output->filler_buffer) < ret) {
-				if (xmms_output_filler_wait_for_message(output) != RUN)
-					break;
-			}
-			if(output->filler_state != RUN) {
-				XMMS_DBG ("State changed while waiting...");
-				continue;
-			}
 			gint skip = MIN (ret, output->toskip);
 			output->toskip -= skip;
 
 			if (ret > skip) {
-				xmms_ringbuf_write (output->filler_buffer, buf + skip, ret - skip);
+				wrote = xmms_ringbuf_write (output->filler_buffer, buf + skip, ret - skip);
+				while (wrote < (ret - skip)) {
+					if (xmms_output_filler_wait_for_message(output) != RUN)
+						break;
+					wrote += xmms_ringbuf_write (output->filler_buffer, buf + skip + wrote, ret - skip - wrote);
+				}
+				if(output->filler_state != RUN) {
+					XMMS_DBG ("State changed while waiting...");
+					continue;
+				}
 			}
+
+
 		} else {
 
 			if (ret == -1) {
