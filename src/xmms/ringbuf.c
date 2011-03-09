@@ -37,7 +37,7 @@ struct xmms_ringbuf_St {
 	/** Actually usable number of bytes */
 	guint buffer_size_usable;
 	/** Read and write index */
-	guint rd_index, wr_index;
+	volatile guint rd_index, wr_index;
 	gboolean eos;
 
 	GQueue *hotspots;
@@ -165,10 +165,12 @@ xmms_ringbuf_bytes_used (const xmms_ringbuf_t *ringbuf)
 static guint
 read_bytes (xmms_ringbuf_t *ringbuf, guint8 *data, guint len)
 {
-	guint to_read, r = 0, cnt, tmp;
+	guint to_read, bytes_used, r = 0, cnt, tmp;
 	gboolean ok;
 
-	to_read = MIN (len, xmms_ringbuf_bytes_used (ringbuf));
+
+	bytes_used = xmms_ringbuf_bytes_used (ringbuf);
+	to_read = MIN (len, bytes_used);
 
 	while (!g_queue_is_empty (ringbuf->hotspots)) {
 		xmms_ringbuf_hotspot_t *hs = g_queue_peek_head (ringbuf->hotspots);
@@ -229,8 +231,7 @@ xmms_ringbuf_read (xmms_ringbuf_t *ringbuf, gpointer data, guint len)
 
 	r = read_bytes (ringbuf, (guint8 *) data, len);
 
-	ringbuf->rd_index += r;
-	ringbuf->rd_index %= ringbuf->buffer_size;
+	ringbuf->rd_index = (ringbuf->rd_index + r) % ringbuf->buffer_size;
 
 	if (r) {
 		g_cond_broadcast (ringbuf->free_cond);
@@ -321,14 +322,15 @@ guint
 xmms_ringbuf_write (xmms_ringbuf_t *ringbuf, gconstpointer data,
                     guint len)
 {
-	guint to_write, w = 0, cnt;
+	guint to_write, bytes_free, w = 0, cnt;
 	const guint8 *src = data;
 
 	g_return_val_if_fail (ringbuf, 0);
 	g_return_val_if_fail (data, 0);
 	g_return_val_if_fail (len > 0, 0);
 
-	to_write = MIN (len, xmms_ringbuf_bytes_free (ringbuf));
+	bytes_free = xmms_ringbuf_bytes_free (ringbuf);
+	to_write = MIN (len, bytes_free);
 
 	while (to_write > 0) {
 		cnt = MIN (to_write, ringbuf->buffer_size - ringbuf->wr_index);
