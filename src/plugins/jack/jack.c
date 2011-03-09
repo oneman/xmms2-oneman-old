@@ -246,7 +246,7 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 	xmms_output_t *output = (xmms_output_t*) arg;
 	xmms_jack_data_t *data;
 	xmms_samplefloat_t *buf[CHANNELS];
-	xmms_samplefloat_t tbuf[CHANNELS*1024];
+	xmms_samplefloat_t tbuf[CHANNELS*8192];
 	gint i, j, res, toread;
 
 	g_return_val_if_fail (output, -1);
