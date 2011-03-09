@@ -562,20 +562,22 @@ xmms_output_filler (void *arg)
 		ret = xmms_xform_this_read (chain, buf, sizeof (buf), &err);
 
 		if (ret > 0) {
-		int free;
-		if((free = xmms_ringbuf_bytes_free(output->filler_buffer)) < ret) {
-			g_atomic_int_set(&output->bytes_wanted, ret - free);
-			new_filler_state = xmms_output_filler_message_get_wait(output);
-			if ((new_filler_state != -1) && (new_filler_state != RUN)) {
-				output->filler_state = new_filler_state;
-				XMMS_DBG ("State changed while waiting...");
-				continue;
+			int free;
+			if((free = xmms_ringbuf_bytes_free(output->filler_buffer)) < ret) {
+				g_atomic_int_set(&output->bytes_wanted, ret - free);
+				XMMS_DBG ("Waiting for %d bytes", ret - free);
+				new_filler_state = xmms_output_filler_message_get_wait(output);
+				if ((new_filler_state != -1) && (new_filler_state != RUN)) {
+					output->filler_state = new_filler_state;
+					XMMS_DBG ("State changed while waiting...");
+					continue;
+				} else {
+					XMMS_DBG ("Got notice they are now free");
+					
+				}
 			} else {
-				g_atomic_int_set(&output->bytes_wanted, 0);
+
 			}
-		} else {
-			g_atomic_int_set(&output->bytes_wanted, 0);
-		}
 
 			// XMMS_DBG ("Got samples from chain and writing to output buffer"); 
 			gint skip = MIN (ret, output->toskip);
@@ -636,12 +638,15 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 	*/
 	update_playtime (output, ret);
 	int bytes_wanted;
+	bytes_wanted = g_atomic_int_get(&output->bytes_wanted);
 	//if((ret >= output->chunksize) || (output->bytes_available >= output->chunksize) || ((output->bytes_wanted != 0) && (output->bytes_available > output->bytes_wanted))) {
-	if((bytes_wanted = g_atomic_int_get(&output->bytes_wanted)) != 0) {
+	if(bytes_wanted != 0) {
 		output->bytes_available += ret;
-		if (output->bytes_available > bytes_wanted) {
+		if (output->bytes_available >= bytes_wanted) {
+			XMMS_DBG ("Telling about bytes, avail: %d wanted: %d", output->bytes_available, bytes_wanted);
 			xmms_output_filler_command(output, RUN);
 			output->bytes_available = 0;
+			g_atomic_int_set(&output->bytes_wanted, 0);
 		}
 	}
 
