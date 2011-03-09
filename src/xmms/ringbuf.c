@@ -155,11 +155,16 @@ xmms_ringbuf_bytes_used (const xmms_ringbuf_t *ringbuf)
 {
 	g_return_val_if_fail (ringbuf, 0);
 
-	if (ringbuf->wr_index >= ringbuf->rd_index) {
-		return ringbuf->wr_index - ringbuf->rd_index;
+	guint wr_index_tmp, rd_index_tmp;
+
+	wr_index_tmp = ringbuf->wr_index;
+	rd_index_tmp = ringbuf->rd_index;		
+
+	if (wr_index_tmp >= rd_index_tmp) {
+		return wr_index_tmp - rd_index_tmp;
 	}
 
-	return ringbuf->buffer_size - (ringbuf->rd_index - ringbuf->wr_index);
+	return ringbuf->buffer_size - (rd_index_tmp - wr_index_tmp);
 }
 
 static guint
