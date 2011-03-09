@@ -125,8 +125,7 @@ struct xmms_output_St {
 	GAsyncQueue *filler_messages;
 	gboolean tickled_when_paused;
 	gint chunksize;
-	gint bytes_available;
-	gint bytes_wanted;
+
 	xmms_output_filler_commands_t commands;
 
 	GThread *filler_thread;
@@ -611,17 +610,17 @@ xmms_output_filler (void *arg)
 		ret = xmms_xform_this_read (chain, buf, sizeof (buf), &err);
 
 		if (ret > 0) {
-			int free;
-			free = xmms_ringbuf_bytes_free(output->filler_buffer);
-			if(free < ret) {
-				g_atomic_int_set(&output->bytes_wanted, ret - free);
-				//XMMS_DBG ("Waiting for %d bytes", ret - free);
+
+			while (xmms_ringbuf_bytes_free(output->filler_buffer) < ret) {
 				if (xmms_output_filler_wait_for_message(output) != RUN) {
 					XMMS_DBG ("State changed while waiting...");
-					continue;
-				} 
+					break;
+				}
 			}
-
+			if(output->filler_state != RUN) {
+				XMMS_DBG ("State changed while waiting...");
+				continue;
+			}
 			gint skip = MIN (ret, output->toskip);
 			output->toskip -= skip;
 
@@ -656,7 +655,7 @@ xmms_output_filler (void *arg)
 gint
 xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 {
-	gint ret, bytes_wanted;
+	gint ret;
 	xmms_error_t err;
 
 	xmms_error_reset (&err);
@@ -675,17 +674,7 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 
 	/* Here we drive the output filler along */
 
-	bytes_wanted = g_atomic_int_get(&output->bytes_wanted);
-
-	if(bytes_wanted != 0) {
-		output->bytes_available += ret;
-		if (output->bytes_available >= bytes_wanted) {
-			//XMMS_DBG ("Saying %d bytes are free", output->bytes_available);
-			xmms_output_filler_command(output, RUN);
-			output->bytes_available = 0;
-			g_atomic_int_set(&output->bytes_wanted, 0);
-		}
-	}
+	xmms_output_filler_command(output, RUN);
 
 	return ret;
 }
@@ -1113,8 +1102,6 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->filler_state = STOP;
 	
 	output->chunksize = 4096;
-	output->bytes_available = 0;
-	output->bytes_wanted = 0;
 	output->tickled_when_paused = FALSE;
 
 	output->new_internal_filler_state = NOOP;
