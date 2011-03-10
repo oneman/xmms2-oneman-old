@@ -40,6 +40,7 @@ typedef struct xmms_jack_data_St {
 	gint chunksiz;
 	gboolean error;
 	gboolean running;
+	guint underruns;
 } xmms_jack_data_t;
 
 
@@ -135,6 +136,7 @@ xmms_jack_new (xmms_output_t *output)
 
 	g_return_val_if_fail (output, FALSE);
 	data = g_new0 (xmms_jack_data_t, 1);
+	data->underruns = 0;
 
 	xmms_output_private_data_set (output, data);
 
@@ -268,7 +270,8 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 
 			avail = xmms_output_bytes_available(output);
 			if(avail < t) {
-				XMMS_DBG ("Jack Output Underun! Not Enough Bytes Availible. Wanted: %d Avail: %d", t, avail);
+				data->underruns++;
+				XMMS_DBG ("Jack Output Underun Number %d! Not Enough Bytes Availible. Wanted: %d Avail: %d", data->underruns, t, avail);
 				break;
 			}
 
