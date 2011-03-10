@@ -261,14 +261,14 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 
 	if (data->running) {
 		while (toread) {
-			gint t;
+			gint t, avail;
 
 			t = MIN (toread * CHANNELS * sizeof (xmms_samplefloat_t),
 			         sizeof (tbuf));
 
-
-			if(xmms_output_bytes_available(output) < t) {
-				XMMS_DBG ("Jack Output Underun! Not Enough Bytes Availible.");
+			avail = xmms_output_bytes_available(output);
+			if(avail < t) {
+				XMMS_DBG ("Jack Output Underun! Not Enough Bytes Availible. Wanted: %d Avail: %d", t, avail);
 				break;
 			}
 
