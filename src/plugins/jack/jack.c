@@ -41,6 +41,7 @@ typedef struct xmms_jack_data_St {
 	gboolean error;
 	gboolean running;
 	guint underruns;
+	guint underruns2;
 } xmms_jack_data_t;
 
 
@@ -229,6 +230,9 @@ xmms_jack_status (xmms_output_t *output, xmms_playback_status_t status)
 		data->running = TRUE;
 	} else {
 		data->running = FALSE;
+		XMMS_DBG ("Jack info while you wait" );
+		XMMS_DBG ("LEGIT Underrun Count: %d Filler Codestate: %d", data->underruns, xmms_output_filler_whereis(output) );
+		XMMS_DBG ("ODD Underrun Count: %d Filler Codestate: %d", data->underruns2, xmms_output_filler_whereis(output) );
 	}
 
 	return TRUE;
@@ -263,15 +267,21 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 
 	if (data->running) {
 		while (toread) {
-			gint t, avail;
+			gint t, avail, utype;
 
 			t = MIN (toread * CHANNELS * sizeof (xmms_samplefloat_t),
 			         sizeof (tbuf));
 
 			avail = xmms_output_bytes_available(output);
 			if(avail < t) {
-				data->underruns++;
-				XMMS_DBG ("Jack Output Underun Number %d! Not Enough Bytes Availible. Wanted: %d Avail: %d", data->underruns, t, avail);
+				utype = xmms_output_filler_whereis(output);
+				if (utype == 5) {
+					data->underruns++;
+					XMMS_DBG ("Jack LEGIT Output Underun Number %d! Not Enough Bytes Availible. Wanted: %d Avail: %d Filler: %d", data->underruns, t, avail, utype );
+				} else {
+					data->underruns2++;
+					//XMMS_DBG ("Jack ODD Output Underun Number %d! Not Enough Bytes Availible. Wanted: %d Avail: %d Filler: %d", data->underruns2, t, avail, utype );
+				}
 				break;
 			}
 

@@ -119,7 +119,7 @@ struct xmms_output_St {
 	
 	xmms_medialib_entry_t current_entry;
 	guint toskip;
-
+	gint where_is_the_output_filler;
 	/* */
 
 	GAsyncQueue *filler_messages;
@@ -373,6 +373,9 @@ xmms_output_filler_message_send (xmms_output_t *output, xmms_output_filler_comma
 
 	g_async_queue_push (output->filler_messages, &output->commands[command]);
 
+	g_cond_signal (output->filler_state_cond);
+	
+
 }
 
 static xmms_output_filler_state_t
@@ -426,22 +429,27 @@ xmms_output_filler (void *arg)
 	xmms_output_song_changed_arg_t *hsarg;
 	xmms_medialib_session_t *session;
 
+	output->where_is_the_output_filler = 0;
+
+
 	while (output->filler_state != QUIT) {
 
 		/* Check for new state, first internally determined, then externally commanded */
-
+	output->where_is_the_output_filler = 1;
 		if(output->new_internal_filler_state != NOOP) {
 			output->filler_state = output->new_internal_filler_state;
 			output->new_internal_filler_state = NOOP;
 		} else {
+	output->where_is_the_output_filler = 2;
 			if(xmms_output_filler_check_for_message(output) != FALSE) {
+		output->where_is_the_output_filler = 3;
 				XMMS_DBG ("Output Filler Received New State: %d", output->filler_state );
 				continue;
 			}
 		}
 
 		/* Stopped State */
-
+	output->where_is_the_output_filler = 4;
 		if (output->filler_state == STOP) {
 			if (chain) {
 				
@@ -609,10 +617,10 @@ xmms_output_filler (void *arg)
 
 
 		/* Running State and we have a chain */
-
+	output->where_is_the_output_filler = 5;
 
 		ret = xmms_xform_this_read (chain, buf, sizeof (buf), &err);
-
+	output->where_is_the_output_filler = 6;
 		if (ret > 0) {
 			int wrote;
 			wrote = 0;
@@ -621,14 +629,22 @@ xmms_output_filler (void *arg)
 			output->toskip -= skip;
 
 			if (ret > skip) {
+	output->where_is_the_output_filler = 7;
 				wrote = xmms_ringbuf_write (output->filler_buffer, buf + skip, ret - skip);
+	output->where_is_the_output_filler = 8;
 				while (wrote < (ret - skip)) {
-					if (xmms_output_filler_wait_for_message(output) != RUN)
+	output->where_is_the_output_filler = 9;
+					g_cond_wait (output->filler_state_cond, output->pointless_mutex);
+	output->where_is_the_output_filler = 10;
+					if(xmms_output_filler_check_for_message(output) != FALSE) {
 						break;
+					}
+						output->where_is_the_output_filler = 11;
 					wrote += xmms_ringbuf_write (output->filler_buffer, buf + skip + wrote, ret - skip - wrote);
+	output->where_is_the_output_filler = 12;
 				}
 				if(output->filler_state != RUN) {
-					XMMS_DBG ("State changed while waiting...");
+					XMMS_DBG ("State changed while waiting... %d", output->filler_state );
 					continue;
 				}
 			}
@@ -655,6 +671,8 @@ xmms_output_filler (void *arg)
 
 	/* Filler has been told to quit (xmms2d has been quit) */
 
+	g_mutex_unlock(output->pointless_mutex);
+
 	XMMS_DBG ("Filler thread says buh bye ;)");
 	return NULL;
 }
@@ -677,11 +695,13 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 		return -1;
 	}
 
+	g_cond_signal (output->filler_state_cond);
+
 	update_playtime (output, ret);
 
 	/* Here we drive the output filler along */
 
-	xmms_output_filler_command(output, RUN);
+	//xmms_output_filler_command(output, RUN);
 
 	return ret;
 }
@@ -697,6 +717,12 @@ guint
 xmms_output_bytes_available (xmms_output_t *output)
 {
 	return xmms_ringbuf_bytes_used(output->filler_buffer);
+}
+
+gint
+xmms_output_filler_whereis(xmms_output_t *output)
+{
+	return output->where_is_the_output_filler;
 }
 
 xmms_config_property_t *
