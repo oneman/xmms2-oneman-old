@@ -53,6 +53,7 @@ typedef struct xmms_ringbuf_hotspot_St {
 } xmms_ringbuf_hotspot_t;
 
 
+
 /**
  * The usable size of the ringbuffer.
  */
@@ -165,6 +166,41 @@ xmms_ringbuf_bytes_used (const xmms_ringbuf_t *ringbuf)
 	}
 
 	return ringbuf->buffer_size - (rd_index_tmp - wr_index_tmp);
+}
+
+
+gint xmms_ringbuf_get_next_hotspot_pos (xmms_ringbuf_t *ringbuf) {
+
+	while (!g_queue_is_empty (ringbuf->hotspots)) {
+		xmms_ringbuf_hotspot_t *hs = g_queue_peek_head (ringbuf->hotspots);
+		return hs->pos;
+	}
+
+
+	return -1;
+
+}
+
+void xmms_ringbuf_hit_hotspot (xmms_ringbuf_t *ringbuf) {
+
+	gboolean ok;
+
+		xmms_ringbuf_hotspot_t *hs = g_queue_peek_head (ringbuf->hotspots);
+		(void) g_queue_pop_head (ringbuf->hotspots);
+		ok = hs->callback (hs->arg);
+		if (hs->destroy)
+			hs->destroy (hs->arg);
+		g_free (hs);
+
+		if (!ok) {
+			//return 0;
+		}
+}
+
+gint
+xmms_ringbuf_get_read_pos (xmms_ringbuf_t *ringbuf)
+{
+	return ringbuf->rd_index;
 }
 
 static guint
@@ -480,4 +516,111 @@ xmms_ringbuf_hotspot_set (xmms_ringbuf_t *ringbuf, gboolean (*cb) (void *), void
 	g_queue_push_tail (ringbuf->hotspots, hs);
 }
 
+
+/* Advance the read pointer `cnt' places. */
+
+void
+xmms_ringbuf_read_advance (xmms_ringbuf_t * ringbuf, gint cnt)
+{
+	ringbuf->rd_index = (ringbuf->rd_index + cnt) % ringbuf->buffer_size;
+	g_cond_broadcast (ringbuf->free_cond);
+}
+
+/* Advance the write pointer `cnt' places. */
+
+void
+xmms_ringbuf_write_advance (xmms_ringbuf_t * ringbuf, gint cnt)
+{
+	ringbuf->wr_index = (ringbuf->wr_index + cnt) % ringbuf->buffer_size;
+}
+
+/* The non-copying data reader.  `vec' is an array of two places.  Set
+   the values at `vec' to hold the current readable data at `rb'.  If
+   the readable data is in one segment the second segment has zero
+   length.  */
+
+void
+xmms_ringbuf_get_read_vector (const xmms_ringbuf_t * rb,
+				 xmms_ringbuf_vector_t * vec)
+{
+	gint used_cnt;
+	gint cnt2;
+	gint w, r;
+
+	w = rb->wr_index;
+	r = rb->rd_index;
+/*
+	if (w > r) {
+		free_cnt = w - r;
+	} else {
+		free_cnt = (w - r + rb->size) & rb->size_mask;
+	}
+*/
+	used_cnt = xmms_ringbuf_bytes_used(rb);// 6000
+
+	cnt2 = r + used_cnt;  //30000 + 6000
+           //36000    32000
+	if (cnt2 > rb->buffer_size) {
+
+		/* Two part vector: the rest of the buffer after the current write
+		   ptr, plus some from the start of the buffer. */
+
+		vec[0].buf = rb->buffer + r;
+		vec[0].len = rb->buffer_size - r; //32000 - 30000  = 2000
+		vec[1].buf = rb->buffer;// 0
+		vec[1].len = cnt2 - rb->buffer_size; // 36000 - 32000 = 4000
+
+	} else {
+
+		/* Single part vector: just the rest of the buffer */
+
+		vec[0].buf = rb->buffer + r;
+		vec[0].len = used_cnt;
+		vec[1].len = 0;
+	}
+}
+
+/* The non-copying data writer.  `vec' is an array of two places.  Set
+   the values at `vec' to hold the current writeable data at `rb'.  If
+   the writeable data is in one segment the second segment has zero
+   length.  */
+
+void
+xmms_ringbuf_get_write_vector (const xmms_ringbuf_t * rb,
+				  xmms_ringbuf_vector_t * vec)
+{
+	gint free_cnt;
+	gint cnt2;
+	gint w, r;
+
+	w = rb->wr_index;
+	r = rb->rd_index;
+/*
+	if (w > r) {
+		free_cnt = ((r - w + rb->size) & rb->size_mask) - 1;
+	} else if (w < r) {
+		free_cnt = (r - w) - 1;
+	} else {
+		free_cnt = rb->size - 1;
+	}
+*/
+	free_cnt = xmms_ringbuf_bytes_free(rb);
+
+	cnt2 = w + free_cnt;
+
+	if (cnt2 > rb->buffer_size) {
+
+		/* Two part vector: the rest of the buffer after the current write
+		   ptr, plus some from the start of the buffer. */
+
+		vec[0].buf = &(rb->buffer[w]);
+		vec[0].len = rb->buffer_size - w;
+		vec[1].buf = rb->buffer;
+		vec[1].len = cnt2 - rb->buffer_size;
+	} else {
+		vec[0].buf = &(rb->buffer[w]);
+		vec[0].len = free_cnt;
+		vec[1].len = 0;
+	}
+}
 

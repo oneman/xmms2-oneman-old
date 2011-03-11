@@ -423,6 +423,8 @@ xmms_output_filler (void *arg)
 	xmms_error_t err;
 	gint ret;
 
+	xmms_ringbuf_vector_t ringbuf_write_vectors[2];
+
 	xmms_error_reset (&err);
 
 	xmms_medialib_entry_t entry;
@@ -617,10 +619,10 @@ xmms_output_filler (void *arg)
 
 
 		/* Running State and we have a chain */
-	output->where_is_the_output_filler = 5;
+		output->where_is_the_output_filler = 5;
 
 		ret = xmms_xform_this_read (chain, buf, sizeof (buf), &err);
-	output->where_is_the_output_filler = 6;
+		output->where_is_the_output_filler = 6;
 		if (ret > 0) {
 			int wrote;
 			wrote = 0;
@@ -629,19 +631,19 @@ xmms_output_filler (void *arg)
 			output->toskip -= skip;
 
 			if (ret > skip) {
-	output->where_is_the_output_filler = 7;
+				output->where_is_the_output_filler = 7;
 				wrote = xmms_ringbuf_write (output->filler_buffer, buf + skip, ret - skip);
-	output->where_is_the_output_filler = 8;
+				output->where_is_the_output_filler = 8;
 				while (wrote < (ret - skip)) {
-	output->where_is_the_output_filler = 9;
+					output->where_is_the_output_filler = 9;
 					g_cond_wait (output->filler_state_cond, output->pointless_mutex);
-	output->where_is_the_output_filler = 10;
+					output->where_is_the_output_filler = 10;
 					if(xmms_output_filler_check_for_message(output) != FALSE) {
 						break;
 					}
 						output->where_is_the_output_filler = 11;
 					wrote += xmms_ringbuf_write (output->filler_buffer, buf + skip + wrote, ret - skip - wrote);
-	output->where_is_the_output_filler = 12;
+					output->where_is_the_output_filler = 12;
 				}
 				if(output->filler_state != RUN) {
 					XMMS_DBG ("State changed while waiting... %d", output->filler_state );
@@ -676,6 +678,44 @@ xmms_output_filler (void *arg)
 	XMMS_DBG ("Filler thread says buh bye ;)");
 	return NULL;
 }
+
+void
+xmms_output_get_vectors(xmms_output_t *output, xmms_output_vector_t * vectors)
+{
+
+	xmms_ringbuf_get_read_vector (output->filler_buffer, (xmms_ringbuf_vector_t *) vectors);
+
+}
+
+void
+xmms_output_advance(xmms_output_t *output, gint cnt)
+{
+	xmms_ringbuf_read_advance(output->filler_buffer, cnt);
+	g_cond_signal (output->filler_state_cond);
+	update_playtime (output, cnt);
+	//XMMS_DBG ("Advanced %d bytes", cnt);
+
+}
+
+gint
+xmms_output_get_next_hotspot_pos(xmms_output_t *output)
+{
+	return xmms_ringbuf_get_next_hotspot_pos (output->filler_buffer);
+}
+
+gint
+xmms_output_get_ringbuf_pos(xmms_output_t *output)
+{
+	return xmms_ringbuf_get_read_pos (output->filler_buffer);
+}
+
+void
+xmms_output_hit_hotspot(xmms_output_t *output)
+{
+	xmms_ringbuf_hit_hotspot (output->filler_buffer);
+}
+
+
 
 gint
 xmms_output_read (xmms_output_t *output, char *buffer, gint len)
@@ -712,6 +752,8 @@ xmms_output_read_wait (xmms_output_t *output, char *buffer, gint len)
 	xmms_ringbuf_wait_used (output->filler_buffer, len, output->filler_mutex);
 	return xmms_output_read (output, buffer, len);
 }
+
+
 
 guint
 xmms_output_bytes_available (xmms_output_t *output)

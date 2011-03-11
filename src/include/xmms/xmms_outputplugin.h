@@ -42,6 +42,11 @@ G_BEGIN_DECLS
 
 typedef struct xmms_output_St xmms_output_t;
 
+typedef struct xmms_output_vector_St {
+	guint8  *buf;
+	gint len;
+} xmms_output_vector_t;
+
 /**
  * The current API version.
  */
@@ -312,7 +317,15 @@ void xmms_output_stream_type_add (xmms_output_t *output, ...);
  */
 gint xmms_output_read (xmms_output_t *output, char *buffer, gint len);
 
+void xmms_output_get_vectors(xmms_output_t *output, xmms_output_vector_t *vectors);
 
+void xmms_output_advance(xmms_output_t *output, gint cnt);
+
+gint xmms_output_get_next_hotspot_pos(xmms_output_t *output);
+
+void xmms_output_hit_hotspot(xmms_output_t *output);
+
+gint xmms_output_get_ringbuf_pos(xmms_output_t *output);
 /**
  * Read a number of bytes of data from the output buffer into a buffer.
  *

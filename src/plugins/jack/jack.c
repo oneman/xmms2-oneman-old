@@ -253,7 +253,12 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 	xmms_jack_data_t *data;
 	xmms_samplefloat_t *buf[CHANNELS];
 	xmms_samplefloat_t tbuf[CHANNELS*8192];
-	gint i, j, res, toread;
+	gint i, j, res, oldres, toread;
+	gint hotspot_pos, ringbuf_pos, hit_hotspot;
+xmms_samplefloat_t *vecfloat1;
+xmms_samplefloat_t *vecfloat2;
+	xmms_output_vector_t output_vectors[2];
+
 
 	g_return_val_if_fail (output, -1);
 	data = xmms_output_private_data_get (output);
@@ -285,6 +290,7 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 				break;
 			}
 
+			/*
 			res = xmms_output_read (output, (gchar *)tbuf, t);
 
 			if (res <= 0) {
@@ -296,14 +302,75 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 				// On the Last moment of a song, but not on a track jump, read will cross a hotspot
 				// and need to run twice, Just thought I'd mention that
 			}
+			*/
+			hit_hotspot = 0;
+			xmms_output_get_vectors(output, output_vectors);
+			hotspot_pos = xmms_output_get_next_hotspot_pos(output);
+			ringbuf_pos = xmms_output_get_ringbuf_pos(output);
+			if (hotspot_pos != -1 )	{
+				if((ringbuf_pos <= hotspot_pos) && (hotspot_pos <= (ringbuf_pos + t))) { 
+					hit_hotspot = 1;
+					t = hotspot_pos - ringbuf_pos;
+				} else {
 
+				if((ringbuf_pos > hotspot_pos) && ((t - (32768 - ringbuf_pos)) > hotspot_pos)) { 
+					hit_hotspot = 1;
+					t = (32768 - ringbuf_pos) + hotspot_pos;
+				} 
+				}
+			} else {
+
+			}
+
+			res = MIN(t, output_vectors[0].len);
+			//XMMS_DBG ("vector 1 len %d", output_vectors[0].len);
+//XMMS_DBG ("jammin 1 %d", res);
 			res /= CHANNELS * sizeof (xmms_samplefloat_t);
+vecfloat1 = (xmms_samplefloat_t *)output_vectors[0].buf;
+
 			for (i = 0; i < res; i++) {
 				for (j = 0; j < CHANNELS; j++) {
-					buf[j][i] = tbuf[i*CHANNELS + j];
+					buf[j][i] = vecfloat1[i*CHANNELS + j];
 				}
 			}
 			toread -= res;
+			
+oldres = res;
+
+
+			if (output_vectors[1].len > 0 && toread > 0) {
+			//XMMS_DBG ("vector 2 len %d", output_vectors[1].len);
+			res = res * (CHANNELS * sizeof (xmms_samplefloat_t));
+			res = t - res;
+//XMMS_DBG ("jammin 2 %d", res);
+			res /= CHANNELS * sizeof (xmms_samplefloat_t);
+vecfloat2 = (xmms_samplefloat_t *)output_vectors[1].buf;
+
+
+if((oldres %= 2) == 1) {
+
+			//for (i = oldres - 1; i < res; i++) {
+				//for (j = 1; j < CHANNELS; j++) {
+					buf[1][oldres] = vecfloat2[0*CHANNELS + 1];
+				//}
+			//}
+//oldres = oldres + 1;
+}
+oldres = oldres + 1;
+			for (i = 0; i < res; i++) {
+				for (j = 0; j < CHANNELS; j++) {
+					buf[j][i + oldres] = vecfloat2[i*CHANNELS + j];
+				}
+			}
+			toread -= res;
+			}
+
+			xmms_output_advance(output, t);
+			if (hit_hotspot)	{
+				xmms_output_hit_hotspot(output);
+				//hit_hotspot = 0;
+			}
+
 		}
 	}
 
