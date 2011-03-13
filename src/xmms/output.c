@@ -128,14 +128,17 @@ struct xmms_output_St {
 
 	xmms_output_filler_commands_t commands;
 
+	GThread *observer_thread;
+
 	GThread *filler_thread;
 	GMutex *filler_mutex;
-
-	GMutex *pointless_mutex;
+	GMutex *read_mutex;
 
 	GCond *filler_state_cond;
 	xmms_output_filler_state_t filler_state;
 	xmms_output_filler_state_t new_internal_filler_state;
+
+	xmms_ringbuf_t *observer_buffer;
 
 	xmms_ringbuf_t *filler_buffer;
 	guint32 filler_seek;
@@ -373,7 +376,7 @@ xmms_output_filler_message_send (xmms_output_t *output, xmms_output_filler_comma
 
 	g_async_queue_push (output->filler_messages, &output->commands[command]);
 
-	g_cond_signal (output->filler_state_cond);
+	//g_cond_signal (output->filler_state_cond);
 	
 
 }
@@ -411,6 +414,35 @@ xmms_output_filler_wait_for_message(xmms_output_t *output) {
 	}
 
 	return NOOP;
+
+}
+
+static void *
+xmms_output_observer (void *arg)
+{
+
+	xmms_output_t *output = (xmms_output_t *)arg;
+
+	// ok, so this will read a ringbuf from the output thread and create messages from it
+	// Perhaps it could also do the meanial update playtime task?
+	//while (TRUE) {
+		// wait till some is used or buffer is full or maybe output filler tells us to wait?
+		//xmms_ringbuf_wait_used(output->filler_buffer, 30000, output->filler_mutex);
+		g_cond_wait (output->filler_state_cond, output->filler_mutex);
+		// now we go into normal mode?
+		XMMS_DBG ("Eye of Killrog Opens");
+		while(TRUE) {
+			if(output->filler_state == QUIT)
+				break;
+			xmms_ringbuf_wait_free(output->filler_buffer, output->chunksize, output->filler_mutex);
+			if(output->filler_state == QUIT)
+				break;
+			xmms_output_filler_command(output, RUN); // one chunksize or more is free
+			g_cond_wait (output->filler_state_cond, output->filler_mutex); // wait for filler to tell us to wait for free cond?
+		}
+		XMMS_DBG ("Eye of Killrog Closes");
+	//}
+	return NULL;
 
 }
 
@@ -472,7 +504,7 @@ xmms_output_filler (void *arg)
 			}
 			if (output->filler_state == QUIT) {
 				XMMS_DBG ("Stopped Output filler awakens and prepares to quit");
-				g_mutex_unlock (output->filler_mutex);
+				//g_mutex_unlock (output->filler_mutex);
 			}
 			continue;
 		}
@@ -636,9 +668,12 @@ xmms_output_filler (void *arg)
 				output->where_is_the_output_filler = 8;
 				while (wrote < (ret - skip)) {
 					output->where_is_the_output_filler = 9;
-					g_cond_wait (output->filler_state_cond, output->pointless_mutex);
+					// this tells the waiter to wait for free chunk and send us a message
+					g_cond_signal (output->filler_state_cond);
+					//g_cond_wait (output->filler_state_cond, output->filler_mutex);
 					output->where_is_the_output_filler = 10;
-					if(xmms_output_filler_check_for_message(output) != FALSE) {
+					xmms_output_filler_wait_for_message(output);
+					if(output->filler_state != RUN) {
 						break;
 					}
 						output->where_is_the_output_filler = 11;
@@ -673,7 +708,7 @@ xmms_output_filler (void *arg)
 
 	/* Filler has been told to quit (xmms2d has been quit) */
 
-	g_mutex_unlock(output->pointless_mutex);
+	g_mutex_unlock(output->filler_mutex);
 
 	XMMS_DBG ("Filler thread says buh bye ;)");
 	return NULL;
@@ -691,7 +726,7 @@ void
 xmms_output_advance(xmms_output_t *output, gint cnt)
 {
 	xmms_ringbuf_read_advance(output->filler_buffer, cnt);
-	g_cond_signal (output->filler_state_cond);
+	//g_cond_signal (output->filler_state_cond);
 	update_playtime (output, cnt);
 	//XMMS_DBG ("Advanced %d bytes", cnt);
 
@@ -735,7 +770,7 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 		return -1;
 	}
 
-	g_cond_signal (output->filler_state_cond);
+	//g_cond_signal (output->filler_state_cond);
 
 	update_playtime (output, ret);
 
@@ -749,7 +784,9 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 gint
 xmms_output_read_wait (xmms_output_t *output, char *buffer, gint len)
 {
-	xmms_ringbuf_wait_used (output->filler_buffer, len, output->filler_mutex);
+	//g_mutex_lock(output->read_mutex);
+	xmms_ringbuf_wait_used (output->filler_buffer, len, output->read_mutex);
+	//g_mutex_unlock(output->read_mutex);
 	return xmms_output_read (output, buffer, len);
 }
 
@@ -845,7 +882,7 @@ xmms_playback_client_start (xmms_output_t *output, xmms_error_t *err)
 	g_return_if_fail (output);
 	output->tickled_when_paused = FALSE;
 	xmms_output_filler_command (output, RUN);
-	xmms_ringbuf_wait_used (output->filler_buffer, (32768 / 2), output->pointless_mutex);
+	//xmms_ringbuf_wait_used (output->filler_buffer, (32768 / 2), output->filler_mutex);
 	if (!xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_PLAY)) {
 		xmms_output_filler_command (output, STOP);
 		xmms_error_set (err, XMMS_ERROR_GENERIC, "Could not start playback");
@@ -1074,6 +1111,8 @@ xmms_output_destroy (xmms_object_t *object)
 	xmms_output_filler_command (output, QUIT);
 	g_thread_join (output->filler_thread);
 
+
+
 	g_async_queue_unref (output->filler_messages);
 
 
@@ -1084,17 +1123,28 @@ xmms_output_destroy (xmms_object_t *object)
 	xmms_output_format_list_clear (output);
 
 	xmms_object_unref (output->playlist);
+
+		XMMS_DBG ("Zappin Observer Thread");
+	// tell observer thread to die
+	xmms_ringbuf_clear (output->filler_buffer);
+	g_cond_signal (output->filler_state_cond);
+	g_thread_join (output->observer_thread);
+
+
 		XMMS_DBG ("Freein Status Mutex");
 	g_mutex_free (output->status_mutex);
 	/* g_mutex_free (output->playtime_mutex); */
-		XMMS_DBG ("Freein Pointless Mutex");
-	g_mutex_unlock (output->pointless_mutex); 
-	g_mutex_free (output->pointless_mutex);
+		XMMS_DBG ("Freein Read Mutex");
+	g_mutex_unlock (output->read_mutex);
+	g_mutex_free (output->read_mutex);
 		XMMS_DBG ("Freein Filler Mutex");
 	g_mutex_free (output->filler_mutex);
+		XMMS_DBG ("Freein Filler Cond");
 	g_cond_free (output->filler_state_cond);
 		XMMS_DBG ("Freein Ring Buffer");
 	xmms_ringbuf_destroy (output->filler_buffer);
+		XMMS_DBG ("Freein Observer Ring Buffer");
+	xmms_ringbuf_destroy (output->observer_buffer);
 
 	xmms_ipc_broadcast_unregister ( XMMS_IPC_SIGNAL_PLAYBACK_VOLUME_CHANGED);
 	xmms_ipc_broadcast_unregister ( XMMS_IPC_SIGNAL_PLAYBACK_STATUS);
@@ -1169,8 +1219,8 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 
 	output->filler_messages = g_async_queue_new ();
 
-	output->pointless_mutex = g_mutex_new ();
-	g_mutex_lock (output->pointless_mutex); /* because it has to be locked or unlocked to be freed */
+	output->read_mutex = g_mutex_new ();
+	g_mutex_lock (output->read_mutex); /* because it has to be locked or unlocked to be freed */
 
 	output->filler_mutex = g_mutex_new ();
 	g_mutex_lock (output->filler_mutex); /* because it has to be locked or unlocked to be freed */
@@ -1182,7 +1232,10 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->new_internal_filler_state = NOOP;
 	output->filler_state_cond = g_cond_new ();
 	output->filler_buffer = xmms_ringbuf_new (size);
+	output->observer_buffer = xmms_ringbuf_new (512);
 	output->filler_thread = g_thread_create (xmms_output_filler, output, TRUE, NULL);
+
+	output->observer_thread = g_thread_create (xmms_output_observer, output, TRUE, NULL);
 
 	xmms_config_property_register ("output.flush_on_pause", "1", NULL, NULL);
 	xmms_ipc_object_register (XMMS_IPC_OBJECT_PLAYBACK, XMMS_OBJECT (output));
