@@ -139,8 +139,21 @@ struct xmms_output_St {
 	xmms_output_filler_state_t new_internal_filler_state;
 
 	xmms_ringbuf_t *observer_buffer;
-
+	#define SWITCHBUFFER TRUE
+	#ifdef SWITCHBUFFER
 	xmms_ringbuf_t *filler_buffer;
+	xmms_ringbuf_t *filler_bufferA;
+	xmms_ringbuf_t *filler_bufferB;
+	xmms_ringbuf_t *inactive_filler_buffer;
+	gboolean output_has_switched_buffers;
+	gboolean switchbuffer_seek;
+	gboolean output_needs_to_switch_buffers;
+	gint switchcount;
+	#endif
+	#ifndef SWITCHBUFFER
+	xmms_ringbuf_t *filler_buffer;
+	#endif
+
 	guint32 filler_seek;
 	gint filler_skip;
 
@@ -348,6 +361,17 @@ seek_done (void *data)
 	return TRUE;
 }
 
+
+static gboolean
+seek_done_noskip (void *data)
+{
+	xmms_output_t *output = (xmms_output_t *)data;
+
+	g_atomic_int_set(&output->played, output->filler_seek * xmms_sample_frame_size_get (output->format));
+	//output->toskip = output->filler_skip * xmms_sample_frame_size_get (output->format);
+
+	return TRUE;
+}
 
 static void
 xmms_output_filler_command (xmms_output_t *output, xmms_output_filler_command_t command)
@@ -586,9 +610,18 @@ xmms_output_filler (void *arg)
 						update_playtime (output, 0);
 					}
 				}
-
+				#ifdef SWITCHBUFFER
+					//output->toskip = output->filler_skip * xmms_sample_frame_size_get (output->format);
+					// dont forget to update playtime or should we set hotspot on inactive buffer?
+					output->switchbuffer_seek = TRUE;
+					output->inactive_filler_buffer = (xmms_ringbuf_t *)xmms_output_get_inactive_buffer(output);
+					output->toskip = output->filler_skip * xmms_sample_frame_size_get (output->format);
+					xmms_ringbuf_hotspot_set (output->inactive_filler_buffer, seek_done_noskip, NULL, output);
+				#endif
+				#ifndef SWITCHBUFFER
 				if (output->status == 1)
 					xmms_ringbuf_hotspot_set (output->filler_buffer, seek_done, NULL, output);
+				#endif
 			}
 			output->new_internal_filler_state = RUN;
 			continue;
@@ -660,11 +693,18 @@ xmms_output_filler (void *arg)
 			wrote = 0;
 
 			gint skip = MIN (ret, output->toskip);
+			if (skip > 0) {
+				XMMS_DBG ("Skip Num Bytes from seek was: %d", skip );
+			}
 			output->toskip -= skip;
 
 			if (ret > skip) {
 				output->where_is_the_output_filler = 7;
-				wrote = xmms_ringbuf_write (output->filler_buffer, buf + skip, ret - skip);
+				if(output->switchbuffer_seek == TRUE) {
+					wrote = xmms_ringbuf_write (output->inactive_filler_buffer, buf + skip, ret - skip);
+				} else {
+					wrote = xmms_ringbuf_write (output->filler_buffer, buf + skip, ret - skip);
+				}
 				output->where_is_the_output_filler = 8;
 				while (wrote < (ret - skip)) {
 					output->where_is_the_output_filler = 9;
@@ -684,6 +724,22 @@ xmms_output_filler (void *arg)
 					XMMS_DBG ("State changed while waiting... %d", output->filler_state );
 					continue;
 				}
+
+				if(output->switchbuffer_seek == TRUE) {
+				output->switchcount++;
+				if (output->switchcount < 5) {
+					XMMS_DBG ("Switchbuf QuickPath Loopback");
+					output->new_internal_filler_state = RUN;
+					continue;
+				} else {
+				output->switchcount = 0;
+				output->switchbuffer_seek = FALSE;
+				output->output_needs_to_switch_buffers = TRUE;
+				XMMS_DBG ("Switchbuf Activate!");
+				xmms_output_switchbuffers(output);
+				}
+				}
+
 			}
 
 
@@ -712,6 +768,53 @@ xmms_output_filler (void *arg)
 
 	XMMS_DBG ("Filler thread says buh bye ;)");
 	return NULL;
+}
+
+void
+xmms_output_switchbuffers(xmms_output_t *output)
+{
+
+	if(output->filler_buffer == output->filler_bufferA) {
+		//xmms_ringbuf_clear (output->filler_bufferB);
+		output->filler_buffer = output->filler_bufferB;
+			XMMS_DBG ("Switched to Buffer B");
+	} else {
+		//xmms_ringbuf_clear (output->filler_bufferA);
+		output->filler_buffer = output->filler_bufferA;
+			XMMS_DBG ("Switched to Buffer A");
+	}
+
+	output->output_has_switched_buffers = FALSE;
+
+}
+
+void *
+xmms_output_get_inactive_buffer(xmms_output_t *output)
+{
+
+	if(output->filler_buffer == output->filler_bufferA) {
+		xmms_ringbuf_clear (output->filler_bufferB);
+		return output->filler_bufferB;
+	} else {
+		xmms_ringbuf_clear (output->filler_bufferA);
+		return output->filler_bufferA;
+	}
+
+	output->output_has_switched_buffers = FALSE;
+
+}
+
+
+void 
+xmms_output_clear_inactive_buffer(xmms_output_t *output)
+{
+
+	if(output->filler_buffer == output->filler_bufferA) {
+		xmms_ringbuf_clear (output->filler_bufferB);
+	} else {
+		xmms_ringbuf_clear (output->filler_bufferA);
+	}
+
 }
 
 void
@@ -762,6 +865,13 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 
 	g_return_val_if_fail (output, -1);
 	g_return_val_if_fail (buffer, -1);
+
+	if(output->output_needs_to_switch_buffers == TRUE) {
+		// The following will kick the observer out of a waiting for free space state
+		xmms_output_clear_inactive_buffer(output);
+		output->output_needs_to_switch_buffers = FALSE;
+	}
+
 
 	ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
 	if (ret == 0 && xmms_ringbuf_iseos (output->filler_buffer)) {
@@ -1141,8 +1251,19 @@ xmms_output_destroy (xmms_object_t *object)
 	g_mutex_free (output->filler_mutex);
 		XMMS_DBG ("Freein Filler Cond");
 	g_cond_free (output->filler_state_cond);
-		XMMS_DBG ("Freein Ring Buffer");
+
+
+	#ifdef SWITCHBUFFER
+	XMMS_DBG ("Freein Switched Ring Buffers");
+	xmms_ringbuf_destroy (output->filler_bufferA);
+	xmms_ringbuf_destroy (output->filler_bufferB);
+	#endif
+	#ifndef SWITCHBUFFER
+	XMMS_DBG ("Freein Ring Buffer");
 	xmms_ringbuf_destroy (output->filler_buffer);
+	#endif
+
+
 		XMMS_DBG ("Freein Observer Ring Buffer");
 	xmms_ringbuf_destroy (output->observer_buffer);
 
@@ -1231,7 +1352,23 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 
 	output->new_internal_filler_state = NOOP;
 	output->filler_state_cond = g_cond_new ();
+
+	#ifdef SWITCHBUFFER
+	output->filler_bufferA = xmms_ringbuf_new (size);
+	output->filler_bufferB = xmms_ringbuf_new (size);
+
+	output->filler_buffer = output->filler_bufferA;
+	output->switchbuffer_seek = FALSE;
+	output->output_has_switched_buffers = FALSE;
+				output->switchcount = 0;
+				output->switchbuffer_seek = FALSE;
+	output->output_needs_to_switch_buffers = FALSE;
+
+	#endif
+	#ifndef SWITCHBUFFER
 	output->filler_buffer = xmms_ringbuf_new (size);
+	#endif
+
 	output->observer_buffer = xmms_ringbuf_new (512);
 	output->filler_thread = g_thread_create (xmms_output_filler, output, TRUE, NULL);
 
