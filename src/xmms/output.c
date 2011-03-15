@@ -541,6 +541,12 @@ xmms_output_filler (void *arg)
 				chain = NULL;
 				output->new_internal_filler_state = RUN;
 				XMMS_DBG ("Chain destroyed");
+
+			// switchbuffer jump
+				if (output->status == 1) {
+					output->switchbuffer_seek = TRUE;
+					output->inactive_filler_buffer = (xmms_ringbuf_t *)xmms_output_get_inactive_buffer(output);
+				}
 			} else {
 				XMMS_DBG ("Filler Kill without chain requested, going to stop mode");
 				output->new_internal_filler_state = STOP;
@@ -678,8 +684,11 @@ xmms_output_filler (void *arg)
 			hsarg->flush = output->tickled_when_paused;
 			xmms_object_ref (chain);
 			XMMS_DBG ("New chain ready");
-			xmms_ringbuf_hotspot_set (output->filler_buffer, song_changed, song_changed_arg_free, hsarg);
-				
+			if(output->switchbuffer_seek == TRUE) {
+				xmms_ringbuf_hotspot_set (output->inactive_filler_buffer, song_changed, song_changed_arg_free, hsarg);
+			} else {
+				xmms_ringbuf_hotspot_set (output->filler_buffer, song_changed, song_changed_arg_free, hsarg);
+			}
 		}
 
 
