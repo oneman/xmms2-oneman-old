@@ -745,7 +745,7 @@ xmms_output_filler (void *arg)
 				output->switchbuffer_seek = FALSE;
 				output->output_needs_to_switch_buffers = TRUE;
 				XMMS_DBG ("Switchbuf Activate!");
-				xmms_output_switchbuffers(output);
+				//xmms_output_switchbuffers(output);
 				}
 				}
 
@@ -784,16 +784,18 @@ xmms_output_switchbuffers(xmms_output_t *output)
 {
 
 	if(output->filler_buffer == output->filler_bufferA) {
-		//xmms_ringbuf_clear (output->filler_bufferB);
 		output->filler_buffer = output->filler_bufferB;
+		xmms_ringbuf_clear (output->filler_bufferA);
+		//output->filler_buffer = output->filler_bufferB;
 			XMMS_DBG ("Switched to Buffer B");
 	} else {
-		//xmms_ringbuf_clear (output->filler_bufferA);
 		output->filler_buffer = output->filler_bufferA;
+		xmms_ringbuf_clear (output->filler_bufferB);
+		//output->filler_buffer = output->filler_bufferA;
 			XMMS_DBG ("Switched to Buffer A");
 	}
 
-	output->output_has_switched_buffers = FALSE;
+	//output->output_has_switched_buffers = FALSE;
 
 }
 
@@ -809,7 +811,7 @@ xmms_output_get_inactive_buffer(xmms_output_t *output)
 		return output->filler_bufferA;
 	}
 
-	output->output_has_switched_buffers = FALSE;
+	//output->output_has_switched_buffers = FALSE;
 
 }
 
@@ -876,8 +878,9 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 	g_return_val_if_fail (buffer, -1);
 
 	if(output->output_needs_to_switch_buffers == TRUE) {
+		xmms_output_switchbuffers(output);
 		// The following will kick the observer out of a waiting for free space state
-		xmms_output_clear_inactive_buffer(output);
+		//xmms_output_clear_inactive_buffer(output);
 		output->output_needs_to_switch_buffers = FALSE;
 	}
 
