@@ -139,8 +139,8 @@ struct xmms_output_St {
 	xmms_ringbuf_t *filler_bufferB;
 	xmms_ringbuf_t *inactive_filler_buffer;
 	gboolean switchbuffer_seek;
-	gboolean output_needs_to_switch_buffers;
-	gboolean output_has_switched_buffers;
+	volatile int output_needs_to_switch_buffers;
+	volatile int output_has_switched_buffers;
 	gint switchcount;
 
 	guint32 filler_seek;
@@ -728,7 +728,7 @@ xmms_output_filler (void *arg)
 				output->output_needs_to_switch_buffers = TRUE;
 				XMMS_DBG ("Switchbuf Activate!");
 				while(output->output_has_switched_buffers == FALSE) {
-				output->where_is_the_output_filler = 17;
+						output->where_is_the_output_filler = 17;
 						g_usleep(12000);
 				}
 				output->where_is_the_output_filler = 18;
