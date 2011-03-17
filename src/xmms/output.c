@@ -712,28 +712,34 @@ xmms_output_filler (void *arg)
 					XMMS_DBG ("State changed while waiting... %d", output->filler_state );
 					continue;
 				}
-
+				output->where_is_the_output_filler = 13;
 				if(output->switchbuffer_seek == TRUE) {
+				output->where_is_the_output_filler = 14;
 				output->switchcount++;
 				if (output->switchcount < 5) {
+					output->where_is_the_output_filler = 15;
 					//XMMS_DBG ("Switchbuf QuickPath Loopback");
 					output->new_internal_filler_state = RUN;
 					continue;
 				} else {
+				output->where_is_the_output_filler = 16;
 				output->switchcount = 0;
 				output->switchbuffer_seek = FALSE;
 				output->output_needs_to_switch_buffers = TRUE;
 				XMMS_DBG ("Switchbuf Activate!");
 				while(output->output_has_switched_buffers == FALSE) {
+				output->where_is_the_output_filler = 17;
 						g_usleep(12000);
 				}
+				output->where_is_the_output_filler = 18;
 				output->output_needs_to_switch_buffers = FALSE;
 				output->output_has_switched_buffers = FALSE;
 				}
 				}
+				output->where_is_the_output_filler = 19;
 
 			}
-
+			output->where_is_the_output_filler = 20;
 
 		} else {
 
