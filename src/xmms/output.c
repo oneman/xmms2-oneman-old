@@ -128,31 +128,19 @@ struct xmms_output_St {
 
 	xmms_output_filler_commands_t commands;
 
-	GThread *observer_thread;
-
 	GThread *filler_thread;
-	GMutex *filler_mutex;
 	GMutex *read_mutex;
 
-	GCond *filler_state_cond;
 	xmms_output_filler_state_t filler_state;
 	xmms_output_filler_state_t new_internal_filler_state;
 
-	xmms_ringbuf_t *observer_buffer;
-	#define SWITCHBUFFER TRUE
-	#ifdef SWITCHBUFFER
 	xmms_ringbuf_t *filler_buffer;
 	xmms_ringbuf_t *filler_bufferA;
 	xmms_ringbuf_t *filler_bufferB;
 	xmms_ringbuf_t *inactive_filler_buffer;
-	gboolean output_has_switched_buffers;
 	gboolean switchbuffer_seek;
 	gboolean output_needs_to_switch_buffers;
 	gint switchcount;
-	#endif
-	#ifndef SWITCHBUFFER
-	xmms_ringbuf_t *filler_buffer;
-	#endif
 
 	guint32 filler_seek;
 	gint filler_skip;
@@ -399,10 +387,7 @@ xmms_output_filler_message_send (xmms_output_t *output, xmms_output_filler_comma
 {
 
 	g_async_queue_push (output->filler_messages, &output->commands[command]);
-
-	//g_cond_signal (output->filler_state_cond);
 	
-
 }
 
 static xmms_output_filler_state_t
@@ -441,32 +426,34 @@ xmms_output_filler_wait_for_message(xmms_output_t *output) {
 
 }
 
-static void *
-xmms_output_observer (void *arg)
-{
 
-	xmms_output_t *output = (xmms_output_t *)arg;
+static xmms_output_filler_state_t
+xmms_output_filler_wait_for_message_or_space(xmms_output_t *output) {
 
-	// ok, so this will read a ringbuf from the output thread and create messages from it
-	// Perhaps it could also do the meanial update playtime task?
-	//while (TRUE) {
-		// wait till some is used or buffer is full or maybe output filler tells us to wait?
-		//xmms_ringbuf_wait_used(output->filler_buffer, 30000, output->filler_mutex);
-		g_cond_wait (output->filler_state_cond, output->filler_mutex);
-		// now we go into normal mode?
-		XMMS_DBG ("Eye of Killrog Opens");
-		while(TRUE) {
-			if(output->filler_state == QUIT)
-				break;
-			xmms_ringbuf_wait_free(output->filler_buffer, output->chunksize, output->filler_mutex);
-			if(output->filler_state == QUIT)
-				break;
-			xmms_output_filler_command(output, RUN); // one chunksize or more is free
-			g_cond_wait (output->filler_state_cond, output->filler_mutex); // wait for filler to tell us to wait for free cond?
+	int *new_filler_state_pointer;
+	int free_bytes;
+	GTimeVal wait_time;
+
+
+	while(TRUE) {
+		g_get_current_time (&wait_time);
+		g_time_val_add (&wait_time, 30000);
+
+		new_filler_state_pointer = g_async_queue_timed_pop(output->filler_messages, &wait_time);
+
+		if(new_filler_state_pointer != NULL) {
+			output->filler_state = new_filler_state_pointer - output->commands;
+			return output->filler_state;
+		} else {
+			free_bytes = xmms_ringbuf_bytes_free(output->filler_buffer);
+			if(free_bytes >= output->chunksize){
+				output->filler_state = RUN;
+				return output->filler_state;
+			}
+			
 		}
-		XMMS_DBG ("Eye of Killrog Closes");
-	//}
-	return NULL;
+
+	}
 
 }
 
@@ -528,7 +515,6 @@ xmms_output_filler (void *arg)
 			}
 			if (output->filler_state == QUIT) {
 				XMMS_DBG ("Stopped Output filler awakens and prepares to quit");
-				//g_mutex_unlock (output->filler_mutex);
 			}
 			continue;
 		}
@@ -616,18 +602,12 @@ xmms_output_filler (void *arg)
 						update_playtime (output, 0);
 					}
 				}
-				#ifdef SWITCHBUFFER
-					//output->toskip = output->filler_skip * xmms_sample_frame_size_get (output->format);
-					// dont forget to update playtime or should we set hotspot on inactive buffer?
+
 					output->switchbuffer_seek = TRUE;
 					output->inactive_filler_buffer = (xmms_ringbuf_t *)xmms_output_get_inactive_buffer(output);
 					output->toskip = output->filler_skip * xmms_sample_frame_size_get (output->format);
 					xmms_ringbuf_hotspot_set (output->inactive_filler_buffer, seek_done_noskip, NULL, output);
-				#endif
-				#ifndef SWITCHBUFFER
-				if (output->status == 1)
-					xmms_ringbuf_hotspot_set (output->filler_buffer, seek_done, NULL, output);
-				#endif
+
 			}
 			output->new_internal_filler_state = RUN;
 			continue;
@@ -714,14 +694,12 @@ xmms_output_filler (void *arg)
 				} else {
 					wrote = xmms_ringbuf_write (output->filler_buffer, buf + skip, ret - skip);
 				}
+				
 				output->where_is_the_output_filler = 8;
 				while (wrote < (ret - skip)) {
 					output->where_is_the_output_filler = 9;
-					// this tells the waiter to wait for free chunk and send us a message
-					g_cond_signal (output->filler_state_cond);
-					//g_cond_wait (output->filler_state_cond, output->filler_mutex);
 					output->where_is_the_output_filler = 10;
-					xmms_output_filler_wait_for_message(output);
+					xmms_output_filler_wait_for_message_or_space(output);
 					if(output->filler_state != RUN) {
 						break;
 					}
@@ -745,9 +723,9 @@ xmms_output_filler (void *arg)
 				output->switchbuffer_seek = FALSE;
 				output->output_needs_to_switch_buffers = TRUE;
 				XMMS_DBG ("Switchbuf Activate!");
-				//xmms_output_switchbuffers(output);
-				g_cond_signal (output->filler_state_cond);
-				xmms_output_filler_wait_for_message(output);
+				while(output->output_needs_to_switch_buffers == TRUE) {
+						g_usleep(12000);
+				}
 				}
 				}
 
@@ -775,8 +753,6 @@ xmms_output_filler (void *arg)
 
 	/* Filler has been told to quit (xmms2d has been quit) */
 
-	g_mutex_unlock(output->filler_mutex);
-
 	XMMS_DBG ("Filler thread says buh bye ;)");
 	return NULL;
 }
@@ -788,16 +764,10 @@ xmms_output_switchbuffers(xmms_output_t *output)
 	if(output->filler_buffer == output->filler_bufferA) {
 		output->filler_buffer = output->filler_bufferB;
 		xmms_ringbuf_clear (output->filler_bufferA);
-		//output->filler_buffer = output->filler_bufferB;
-			//XMMS_DBG ("Switched to Buffer B");
 	} else {
 		output->filler_buffer = output->filler_bufferA;
 		xmms_ringbuf_clear (output->filler_bufferB);
-		//output->filler_buffer = output->filler_bufferA;
-			//XMMS_DBG ("Switched to Buffer A");
 	}
-
-	//output->output_has_switched_buffers = FALSE;
 
 }
 
@@ -811,21 +781,6 @@ xmms_output_get_inactive_buffer(xmms_output_t *output)
 	} else {
 		xmms_ringbuf_clear (output->filler_bufferA);
 		return output->filler_bufferA;
-	}
-
-	//output->output_has_switched_buffers = FALSE;
-
-}
-
-
-void 
-xmms_output_clear_inactive_buffer(xmms_output_t *output)
-{
-
-	if(output->filler_buffer == output->filler_bufferA) {
-		xmms_ringbuf_clear (output->filler_bufferB);
-	} else {
-		xmms_ringbuf_clear (output->filler_bufferA);
 	}
 
 }
@@ -842,9 +797,7 @@ void
 xmms_output_advance(xmms_output_t *output, gint cnt)
 {
 	xmms_ringbuf_read_advance(output->filler_buffer, cnt);
-	//g_cond_signal (output->filler_state_cond);
 	update_playtime (output, cnt);
-	//XMMS_DBG ("Advanced %d bytes", cnt);
 
 }
 
@@ -881,8 +834,6 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 
 	if(output->output_needs_to_switch_buffers == TRUE) {
 		xmms_output_switchbuffers(output);
-		// The following will kick the observer out of a waiting for free space state
-		//xmms_output_clear_inactive_buffer(output);
 		output->output_needs_to_switch_buffers = FALSE;
 	}
 
@@ -894,13 +845,7 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 		return -1;
 	}
 
-	//g_cond_signal (output->filler_state_cond);
-
 	update_playtime (output, ret);
-
-	/* Here we drive the output filler along */
-
-	//xmms_output_filler_command(output, RUN);
 
 	return ret;
 }
@@ -1013,7 +958,6 @@ xmms_playback_client_start (xmms_output_t *output, xmms_error_t *err)
 
 	output->tickled_when_paused = FALSE;
 	xmms_output_filler_command (output, RUN);
-	//xmms_ringbuf_wait_used (output->filler_buffer, (32768 / 2), output->filler_mutex);
 	if (!xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_PLAY)) {
 		xmms_output_filler_command (output, STOP);
 		xmms_error_set (err, XMMS_ERROR_GENERIC, "Could not start playback");
@@ -1231,18 +1175,8 @@ xmms_output_destroy (xmms_object_t *object)
 		output->monitor_volume_thread = NULL;
 	}
 
-
-	/* If we are in a STOPPED state, just need to set next state to QUIT and signal
-		 If we are in a RUNNING state, either we will pick the new state up on next
-		 cycle or we are waiting on ringbuf free cond, which will get signal when
-		 we set ringbuf to eos
-
-	*/
-
 	xmms_output_filler_command (output, QUIT);
 	g_thread_join (output->filler_thread);
-
-
 
 	g_async_queue_unref (output->filler_messages);
 
@@ -1255,38 +1189,16 @@ xmms_output_destroy (xmms_object_t *object)
 
 	xmms_object_unref (output->playlist);
 
-		XMMS_DBG ("Zappin Observer Thread");
-	// tell observer thread to die
-	xmms_ringbuf_clear (output->filler_buffer);
-	g_cond_signal (output->filler_state_cond);
-	g_thread_join (output->observer_thread);
 
-
-		XMMS_DBG ("Freein Status Mutex");
+	XMMS_DBG ("Freeing Status Mutex");
 	g_mutex_free (output->status_mutex);
-	/* g_mutex_free (output->playtime_mutex); */
-		XMMS_DBG ("Freein Read Mutex");
+	XMMS_DBG ("Freeing Read Mutex");
 	g_mutex_unlock (output->read_mutex);
 	g_mutex_free (output->read_mutex);
-		XMMS_DBG ("Freein Filler Mutex");
-	g_mutex_free (output->filler_mutex);
-		XMMS_DBG ("Freein Filler Cond");
-	g_cond_free (output->filler_state_cond);
 
-
-	#ifdef SWITCHBUFFER
-	XMMS_DBG ("Freein Switched Ring Buffers");
+	XMMS_DBG ("Freeing Ring Buffers");
 	xmms_ringbuf_destroy (output->filler_bufferA);
 	xmms_ringbuf_destroy (output->filler_bufferB);
-	#endif
-	#ifndef SWITCHBUFFER
-	XMMS_DBG ("Freein Ring Buffer");
-	xmms_ringbuf_destroy (output->filler_buffer);
-	#endif
-
-
-		XMMS_DBG ("Freein Observer Ring Buffer");
-	xmms_ringbuf_destroy (output->observer_buffer);
 
 	xmms_ipc_broadcast_unregister ( XMMS_IPC_SIGNAL_PLAYBACK_VOLUME_CHANGED);
 	xmms_ipc_broadcast_unregister ( XMMS_IPC_SIGNAL_PLAYBACK_STATUS);
@@ -1364,36 +1276,24 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->read_mutex = g_mutex_new ();
 	g_mutex_lock (output->read_mutex); /* because it has to be locked or unlocked to be freed */
 
-	output->filler_mutex = g_mutex_new ();
-	g_mutex_lock (output->filler_mutex); /* because it has to be locked or unlocked to be freed */
+
 	output->filler_state = STOP;
 	
 	output->chunksize = 4096;
 	output->tickled_when_paused = FALSE;
 
 	output->new_internal_filler_state = NOOP;
-	output->filler_state_cond = g_cond_new ();
 
-	#ifdef SWITCHBUFFER
 	output->filler_bufferA = xmms_ringbuf_new (size);
 	output->filler_bufferB = xmms_ringbuf_new (size);
 
 	output->filler_buffer = output->filler_bufferA;
 	output->switchbuffer_seek = FALSE;
-	output->output_has_switched_buffers = FALSE;
-				output->switchcount = 0;
-				output->switchbuffer_seek = FALSE;
+	output->switchcount = 0;
+	output->switchbuffer_seek = FALSE;
 	output->output_needs_to_switch_buffers = FALSE;
 
-	#endif
-	#ifndef SWITCHBUFFER
-	output->filler_buffer = xmms_ringbuf_new (size);
-	#endif
-
-	output->observer_buffer = xmms_ringbuf_new (512);
 	output->filler_thread = g_thread_create (xmms_output_filler, output, TRUE, NULL);
-
-	output->observer_thread = g_thread_create (xmms_output_observer, output, TRUE, NULL);
 
 	xmms_config_property_register ("output.flush_on_pause", "1", NULL, NULL);
 	xmms_ipc_object_register (XMMS_IPC_OBJECT_PLAYBACK, XMMS_OBJECT (output));
