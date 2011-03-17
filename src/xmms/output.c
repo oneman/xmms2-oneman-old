@@ -1004,6 +1004,13 @@ static void
 xmms_playback_client_start (xmms_output_t *output, xmms_error_t *err)
 {
 	g_return_if_fail (output);
+
+	printf("Output Buffer State: %d Ringbuffer Info: Size: %d Free: %d Used: %d\n", 
+			output->where_is_the_output_filler,
+			xmms_ringbuf_size(output->filler_buffer), 
+			xmms_ringbuf_bytes_free(output->filler_buffer), 
+			xmms_ringbuf_bytes_used(output->filler_buffer));
+
 	output->tickled_when_paused = FALSE;
 	xmms_output_filler_command (output, RUN);
 	//xmms_ringbuf_wait_used (output->filler_buffer, (32768 / 2), output->filler_mutex);
