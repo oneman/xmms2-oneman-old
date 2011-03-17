@@ -728,8 +728,10 @@ xmms_output_filler (void *arg)
 				output->output_needs_to_switch_buffers = TRUE;
 				XMMS_DBG ("Switchbuf Activate!");
 				while(g_atomic_int_get(&output->output_has_switched_buffers) == FALSE) {
+						XMMS_DBG ("Waiting for reader ack!");
 						output->where_is_the_output_filler = 17;
 						g_usleep(12000);
+						output->where_is_the_output_filler += 17;
 				}
 				output->where_is_the_output_filler = 18;
 				output->output_needs_to_switch_buffers = FALSE;
