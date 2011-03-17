@@ -140,6 +140,7 @@ struct xmms_output_St {
 	xmms_ringbuf_t *inactive_filler_buffer;
 	gboolean switchbuffer_seek;
 	gboolean output_needs_to_switch_buffers;
+	gboolean output_has_switched_buffers;
 	gint switchcount;
 
 	guint32 filler_seek;
@@ -723,9 +724,11 @@ xmms_output_filler (void *arg)
 				output->switchbuffer_seek = FALSE;
 				output->output_needs_to_switch_buffers = TRUE;
 				XMMS_DBG ("Switchbuf Activate!");
-				while(output->output_needs_to_switch_buffers == TRUE) {
+				while(output->output_has_switched_buffers == FALSE) {
 						g_usleep(12000);
 				}
+				output->output_needs_to_switch_buffers = FALSE;
+				output->output_has_switched_buffers = FALSE;
 				}
 				}
 
@@ -834,7 +837,7 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 
 	if(output->output_needs_to_switch_buffers == TRUE) {
 		xmms_output_switchbuffers(output);
-		output->output_needs_to_switch_buffers = FALSE;
+		output->output_has_switched_buffers = TRUE;
 	}
 
 
@@ -1292,6 +1295,7 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->switchcount = 0;
 	output->switchbuffer_seek = FALSE;
 	output->output_needs_to_switch_buffers = FALSE;
+	output->output_has_switched_buffers = FALSE;
 
 	output->filler_thread = g_thread_create (xmms_output_filler, output, TRUE, NULL);
 
