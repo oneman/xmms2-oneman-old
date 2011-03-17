@@ -727,13 +727,13 @@ xmms_output_filler (void *arg)
 				output->switchbuffer_seek = FALSE;
 				output->output_needs_to_switch_buffers = TRUE;
 				XMMS_DBG ("Switchbuf Activate!");
-				while(output->output_has_switched_buffers == FALSE) {
+				while(g_atomic_int_get(&output->output_has_switched_buffers) == FALSE) {
 						output->where_is_the_output_filler = 17;
 						g_usleep(12000);
 				}
 				output->where_is_the_output_filler = 18;
 				output->output_needs_to_switch_buffers = FALSE;
-				output->output_has_switched_buffers = FALSE;
+				g_atomic_int_set(&output->output_has_switched_buffers, 0);
 				}
 				}
 				output->where_is_the_output_filler = 19;
@@ -843,7 +843,7 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 
 	if(output->output_needs_to_switch_buffers == TRUE) {
 		xmms_output_switchbuffers(output);
-		output->output_has_switched_buffers = TRUE;
+		g_atomic_int_set(&output->output_has_switched_buffers, 1);
 	}
 
 
