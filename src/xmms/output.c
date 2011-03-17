@@ -737,7 +737,7 @@ xmms_output_filler (void *arg)
 				if(output->switchbuffer_seek == TRUE) {
 				output->switchcount++;
 				if (output->switchcount < 5) {
-					XMMS_DBG ("Switchbuf QuickPath Loopback");
+					//XMMS_DBG ("Switchbuf QuickPath Loopback");
 					output->new_internal_filler_state = RUN;
 					continue;
 				} else {
@@ -746,6 +746,8 @@ xmms_output_filler (void *arg)
 				output->output_needs_to_switch_buffers = TRUE;
 				XMMS_DBG ("Switchbuf Activate!");
 				//xmms_output_switchbuffers(output);
+				g_cond_signal (output->filler_state_cond);
+				xmms_output_filler_wait_for_message(output);
 				}
 				}
 
@@ -787,12 +789,12 @@ xmms_output_switchbuffers(xmms_output_t *output)
 		output->filler_buffer = output->filler_bufferB;
 		xmms_ringbuf_clear (output->filler_bufferA);
 		//output->filler_buffer = output->filler_bufferB;
-			XMMS_DBG ("Switched to Buffer B");
+			//XMMS_DBG ("Switched to Buffer B");
 	} else {
 		output->filler_buffer = output->filler_bufferA;
 		xmms_ringbuf_clear (output->filler_bufferB);
 		//output->filler_buffer = output->filler_bufferA;
-			XMMS_DBG ("Switched to Buffer A");
+			//XMMS_DBG ("Switched to Buffer A");
 	}
 
 	//output->output_has_switched_buffers = FALSE;
