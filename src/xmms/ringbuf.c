@@ -429,8 +429,11 @@ xmms_ringbuf_wait_free (const xmms_ringbuf_t *ringbuf, guint len, GMutex *mtx)
 	g_return_if_fail (len <= ringbuf->buffer_size_usable);
 	g_return_if_fail (mtx);
 
+	GTimeVal wait_time;
+	wait_time.tv_usec = 35000;
+
 	while ((xmms_ringbuf_bytes_free (ringbuf) < len) && !ringbuf->eos) {
-		g_cond_wait (ringbuf->free_cond, mtx);
+		g_cond_timed_wait (ringbuf->free_cond, mtx, &wait_time);
 	}
 }
 
@@ -446,8 +449,11 @@ xmms_ringbuf_wait_used (const xmms_ringbuf_t *ringbuf, guint len, GMutex *mtx)
 	g_return_if_fail (len <= ringbuf->buffer_size_usable);
 	g_return_if_fail (mtx);
 
+	GTimeVal wait_time;
+	wait_time.tv_usec = 35000;
+
 	while ((xmms_ringbuf_bytes_used (ringbuf) < len) && !ringbuf->eos) {
-		g_cond_wait (ringbuf->used_cond, mtx);
+		g_cond_timed_wait (ringbuf->free_cond, mtx, &wait_time);
 	}
 }
 
