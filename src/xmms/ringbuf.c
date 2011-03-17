@@ -16,8 +16,10 @@
 
 
 
-
+#ifndef RINGBUFTEST
 #include "xmmspriv/xmms_ringbuf.h"
+#endif
+
 #include <string.h>
 
 /** @defgroup Ringbuffer Ringbuffer
