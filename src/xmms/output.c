@@ -846,6 +846,7 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 	if(output->output_needs_to_switch_buffers == TRUE) {
 		xmms_output_switchbuffers(output);
 		g_atomic_int_set(&output->output_has_switched_buffers, 1);
+		XMMS_DBG ("switched buffers %d", g_atomic_int_get(&output->output_has_switched_buffers));
 	}
 
 
@@ -864,6 +865,8 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 gint
 xmms_output_read_wait (xmms_output_t *output, char *buffer, gint len)
 {
+
+	XMMS_DBG ("Waiting for %d", len);
 	//g_mutex_lock(output->read_mutex);
 	xmms_ringbuf_wait_used (output->filler_buffer, len, output->read_mutex);
 	//g_mutex_unlock(output->read_mutex);
