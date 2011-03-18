@@ -726,6 +726,7 @@ xmms_output_filler (void *arg)
 				output->switchcount = 0;
 				output->switchbuffer_seek = FALSE;
 				output->output_needs_to_switch_buffers = TRUE;
+				xmms_ringbuf_set_eos(output->filler_buffer, TRUE);
 				XMMS_DBG ("Switchbuf Activate!");
 				while(g_atomic_int_get(&output->output_has_switched_buffers) == FALSE) {
 						XMMS_DBG ("Waiting for reader ack!");
@@ -775,9 +776,11 @@ xmms_output_switchbuffers(xmms_output_t *output)
 	if(output->filler_buffer == output->filler_bufferA) {
 		output->filler_buffer = output->filler_bufferB;
 		xmms_ringbuf_clear (output->filler_bufferA);
+		xmms_ringbuf_set_eos(output->filler_bufferA, FALSE);
 	} else {
 		output->filler_buffer = output->filler_bufferA;
 		xmms_ringbuf_clear (output->filler_bufferB);
+		xmms_ringbuf_set_eos(output->filler_bufferB, FALSE);
 	}
 
 }
@@ -866,7 +869,7 @@ gint
 xmms_output_read_wait (xmms_output_t *output, char *buffer, gint len)
 {
 
-	XMMS_DBG ("Waiting for %d", len);
+	//XMMS_DBG ("Waiting for %d", len);
 	//g_mutex_lock(output->read_mutex);
 	xmms_ringbuf_wait_used (output->filler_buffer, len, output->read_mutex);
 	//g_mutex_unlock(output->read_mutex);
