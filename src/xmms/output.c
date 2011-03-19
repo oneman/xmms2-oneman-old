@@ -139,8 +139,7 @@ struct xmms_output_St {
 	xmms_ringbuf_t *filler_bufferB;
 	xmms_ringbuf_t *inactive_filler_buffer;
 	gboolean switchbuffer_seek;
-	volatile int output_needs_to_switch_buffers;
-	volatile int output_has_switched_buffers;
+	int output_needs_to_switch_buffers;
 	gint switchcount;
 
 	guint32 filler_seek;
@@ -357,7 +356,6 @@ seek_done_noskip (void *data)
 	xmms_output_t *output = (xmms_output_t *)data;
 
 	g_atomic_int_set(&output->played, output->filler_seek * xmms_sample_frame_size_get (output->format));
-	//output->toskip = output->filler_skip * xmms_sample_frame_size_get (output->format);
 
 	return TRUE;
 }
@@ -475,27 +473,20 @@ xmms_output_filler (void *arg)
 	xmms_output_song_changed_arg_t *hsarg;
 	xmms_medialib_session_t *session;
 
-	output->where_is_the_output_filler = 0;
-
-
 	while (output->filler_state != QUIT) {
 
 		/* Check for new state, first internally determined, then externally commanded */
-	output->where_is_the_output_filler = 1;
 		if(output->new_internal_filler_state != NOOP) {
 			output->filler_state = output->new_internal_filler_state;
 			output->new_internal_filler_state = NOOP;
 		} else {
-	output->where_is_the_output_filler = 2;
 			if(xmms_output_filler_check_for_message(output) != FALSE) {
-		output->where_is_the_output_filler = 3;
 				XMMS_DBG ("Output Filler Received New State: %d", output->filler_state );
 				continue;
 			}
 		}
 
 		/* Stopped State */
-	output->where_is_the_output_filler = 4;
 		if (output->filler_state == STOP) {
 			if (chain) {
 				
@@ -674,10 +665,8 @@ xmms_output_filler (void *arg)
 
 
 		/* Running State and we have a chain */
-		output->where_is_the_output_filler = 5;
 
 		ret = xmms_xform_this_read (chain, buf, sizeof (buf), &err);
-		output->where_is_the_output_filler = 6;
 		if (ret > 0) {
 			int wrote;
 			wrote = 0;
@@ -689,60 +678,41 @@ xmms_output_filler (void *arg)
 			output->toskip -= skip;
 
 			if (ret > skip) {
-				output->where_is_the_output_filler = 7;
 				if(output->switchbuffer_seek == TRUE) {
 					wrote = xmms_ringbuf_write (output->inactive_filler_buffer, buf + skip, ret - skip);
 				} else {
 					wrote = xmms_ringbuf_write (output->filler_buffer, buf + skip, ret - skip);
 				}
 				
-				output->where_is_the_output_filler = 8;
 				while (wrote < (ret - skip)) {
-					output->where_is_the_output_filler = 9;
-					output->where_is_the_output_filler = 10;
 					xmms_output_filler_wait_for_message_or_space(output);
-					if(output->filler_state != RUN) {
+					if (output->filler_state != RUN) {
 						break;
 					}
-						output->where_is_the_output_filler = 11;
 					wrote += xmms_ringbuf_write (output->filler_buffer, buf + skip + wrote, ret - skip - wrote);
-					output->where_is_the_output_filler = 12;
 				}
-				if(output->filler_state != RUN) {
+				if (output->filler_state != RUN) {
 					XMMS_DBG ("State changed while waiting... %d", output->filler_state );
 					continue;
 				}
-				output->where_is_the_output_filler = 13;
-				if(output->switchbuffer_seek == TRUE) {
-				output->where_is_the_output_filler = 14;
-				output->switchcount++;
-				if (output->switchcount < 5) {
-					output->where_is_the_output_filler = 15;
-					//XMMS_DBG ("Switchbuf QuickPath Loopback");
-					output->new_internal_filler_state = RUN;
-					continue;
-				} else {
-				output->where_is_the_output_filler = 16;
-				output->switchcount = 0;
-				output->switchbuffer_seek = FALSE;
-				output->output_needs_to_switch_buffers = TRUE;
-				xmms_ringbuf_set_eos(output->filler_buffer, TRUE);
-				XMMS_DBG ("Switchbuf Activate!");
-				while(g_atomic_int_get(&output->output_has_switched_buffers) == FALSE) {
-						XMMS_DBG ("Waiting for reader ack!");
-						output->where_is_the_output_filler = 17;
-						g_usleep(12000);
-						output->where_is_the_output_filler += 17;
-				}
-				output->where_is_the_output_filler = 18;
-				//output->output_needs_to_switch_buffers = FALSE;
-				g_atomic_int_set(&output->output_has_switched_buffers, 0);
-				}
-				}
-				output->where_is_the_output_filler = 19;
 
+				if (output->switchbuffer_seek == TRUE) {
+					output->switchcount++;
+					if (output->switchcount < 5) {
+						output->new_internal_filler_state = RUN;
+						continue;
+					} else {
+						output->switchcount = 0;
+						output->switchbuffer_seek = FALSE;
+						output->output_needs_to_switch_buffers = TRUE;
+						xmms_ringbuf_set_eos(output->filler_buffer, TRUE);
+						XMMS_DBG ("Switching buffers!");
+						while(g_atomic_int_get(&output->output_needs_to_switch_buffers) == TRUE) {
+							g_usleep(12000);
+						}
+					}
+				}
 			}
-			output->where_is_the_output_filler = 20;
 
 		} else {
 
@@ -802,9 +772,7 @@ xmms_output_get_inactive_buffer(xmms_output_t *output)
 void
 xmms_output_get_vectors(xmms_output_t *output, xmms_output_vector_t * vectors)
 {
-
 	xmms_ringbuf_get_read_vector (output->filler_buffer, (xmms_ringbuf_vector_t *) vectors);
-
 }
 
 void
@@ -812,7 +780,6 @@ xmms_output_advance(xmms_output_t *output, gint cnt)
 {
 	xmms_ringbuf_read_advance(output->filler_buffer, cnt);
 	update_playtime (output, cnt);
-
 }
 
 gint
@@ -848,9 +815,7 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 
 	if(output->output_needs_to_switch_buffers == TRUE) {
 		xmms_output_switchbuffers(output);
-		g_atomic_int_set(&output->output_has_switched_buffers, 1);
 		g_atomic_int_set(&output->output_needs_to_switch_buffers, 0);
-		XMMS_DBG ("switched buffers %d", g_atomic_int_get(&output->output_has_switched_buffers));
 	}
 
 
@@ -869,11 +834,7 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 gint
 xmms_output_read_wait (xmms_output_t *output, char *buffer, gint len)
 {
-
-	//XMMS_DBG ("Waiting for %d", len);
-	//g_mutex_lock(output->read_mutex);
 	xmms_ringbuf_wait_used (output->filler_buffer, len, output->read_mutex);
-	//g_mutex_unlock(output->read_mutex);
 	return xmms_output_read (output, buffer, len);
 }
 
@@ -882,21 +843,12 @@ xmms_output_read_wait (xmms_output_t *output, char *buffer, gint len)
 guint
 xmms_output_bytes_available (xmms_output_t *output)
 {
-
-	if(output->output_needs_to_switch_buffers == TRUE) {
+	if (output->output_needs_to_switch_buffers == TRUE) {
 		xmms_output_switchbuffers(output);
-		g_atomic_int_set(&output->output_has_switched_buffers, 1);
 		g_atomic_int_set(&output->output_needs_to_switch_buffers, 0);
-		XMMS_DBG ("switched buffers %d", g_atomic_int_get(&output->output_has_switched_buffers));
 	}
 
 	return xmms_ringbuf_bytes_used(output->filler_buffer);
-}
-
-gint
-xmms_output_filler_whereis(xmms_output_t *output)
-{
-	return output->where_is_the_output_filler;
 }
 
 xmms_config_property_t *
@@ -1318,7 +1270,6 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->switchcount = 0;
 	output->switchbuffer_seek = FALSE;
 	output->output_needs_to_switch_buffers = FALSE;
-	output->output_has_switched_buffers = FALSE;
 
 	output->filler_thread = g_thread_create (xmms_output_filler, output, TRUE, NULL);
 
