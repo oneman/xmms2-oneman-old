@@ -41,6 +41,8 @@ typedef struct xmms_jack_data_St {
 	gboolean error;
 	gboolean running;
 	guint underruns;
+	guint volume[2];
+	gfloat volume_actual[2];
 } xmms_jack_data_t;
 
 
@@ -53,7 +55,12 @@ static gboolean xmms_jack_new (xmms_output_t *output);
 static void xmms_jack_destroy (xmms_output_t *output);
 static gboolean xmms_jack_status (xmms_output_t *output, xmms_playback_status_t status);
 static void xmms_jack_flush (xmms_output_t *output);
-
+static gboolean xmms_jack_volume_set (xmms_output_t *output,
+                                      const gchar *channel,
+                                      guint volume);
+static gboolean xmms_jack_volume_get (xmms_output_t *output,
+                                      const gchar **names, guint *values,
+                                      guint *num_channels);
 static int xmms_jack_process (jack_nframes_t frames, void *arg);
 static void xmms_jack_shutdown (void *arg);
 static void xmms_jack_error (const gchar *desc);
@@ -79,6 +86,9 @@ xmms_jack_plugin_setup (xmms_output_plugin_t *plugin)
 
 	methods.status = xmms_jack_status;
 	methods.flush = xmms_jack_flush;
+
+	methods.volume_get = xmms_jack_volume_get;
+	methods.volume_set = xmms_jack_volume_set;
 
 	xmms_output_plugin_methods_set (plugin, &methods);
 
@@ -146,6 +156,10 @@ xmms_jack_new (xmms_output_t *output)
 	data = g_new0 (xmms_jack_data_t, 1);
 
 	data->underruns = 0;
+	data->volume[0] = 100;
+	data->volume[1] = 100;
+	data->volume_actual[0] = 1;
+	data->volume_actual[1] = 1;
 
 	xmms_output_private_data_set (output, data);
 
@@ -300,7 +314,7 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 			res /= CHANNELS * sizeof (xmms_samplefloat_t);
 			for (i = 0; i < res; i++) {
 				for (j = 0; j < CHANNELS; j++) {
-					buf[j][i] = tbuf[i*CHANNELS + j];
+					buf[j][i] = (tbuf[i*CHANNELS + j] * data->volume_actual[j]);
 				}
 			}
 			toread -= res;
@@ -315,6 +329,63 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 	}
 
 	return 0;
+}
+
+static gboolean
+xmms_jack_volume_set (xmms_output_t *output,
+                      const gchar *channel_name, guint volume)
+{
+	xmms_jack_data_t *data;
+
+	g_return_val_if_fail (output, FALSE);
+	g_return_val_if_fail (channel_name, FALSE);
+
+	data = xmms_output_private_data_get (output);
+	g_return_val_if_fail (data, FALSE);
+
+	g_return_val_if_fail (volume <= 100, FALSE);
+
+	if (g_ascii_strcasecmp (channel_name, "Left") == 0) {
+		data->volume[0] = volume;
+		data->volume_actual[0] = (gfloat)(volume/100.0);
+	} else {
+		/* If its not left, its right */
+		data->volume[1] = volume;
+		data->volume_actual[1] = (gfloat)(volume/100.0);
+	}
+
+	return TRUE;
+}
+
+static gboolean
+xmms_jack_volume_get (xmms_output_t *output, const gchar **names,
+                      guint *values, guint *num_channels)
+{
+	xmms_jack_data_t *data;
+
+	g_return_val_if_fail (output, FALSE);
+
+	data = xmms_output_private_data_get (output);
+	g_return_val_if_fail (data, FALSE);
+
+	g_return_val_if_fail (num_channels, FALSE);
+
+	if (!*num_channels) {
+		*num_channels = 2;
+		return TRUE;
+	}
+
+	g_return_val_if_fail (*num_channels == 2, FALSE);
+	g_return_val_if_fail (names, FALSE);
+	g_return_val_if_fail (values, FALSE);
+
+	values[0] = data->volume[0];
+	names[0] = "Left";
+
+	values[1] = data->volume[1];
+	names[1] = "Right";
+
+	return TRUE;
 }
 
 
