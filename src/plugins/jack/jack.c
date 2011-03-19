@@ -170,8 +170,10 @@ xmms_jack_new (xmms_output_t *output)
 	cv = xmms_output_config_lookup (output, "RightVolume");
 	data->volume[1] = xmms_config_property_get_int (cv);
 
-	data->volume_actual[0] = (gfloat)(data->volume[0]/100.0);;
-	data->volume_actual[1] = (gfloat)(data->volume[1]/100.0);;
+	data->volume_actual[0] = (gfloat)(data->volume[0]/100.0);
+	data->volume_actual[0] *= data->volume_actual[0];
+	data->volume_actual[1] = (gfloat)(data->volume[1]/100.0);
+	data->volume_actual[1] *= data->volume_actual[1];
 
 	xmms_output_private_data_set (output, data);
 
@@ -365,6 +367,7 @@ xmms_jack_volume_set (xmms_output_t *output,
 	if (g_ascii_strcasecmp (channel_name, "Left") == 0) {
 		data->volume[0] = volume;
 		data->volume_actual[0] = (gfloat)(volume/100.0);
+		data->volume_actual[0] *= data->volume_actual[0];
 		cv = xmms_output_config_lookup (output, "LeftVolume");
 		sprintf(volume_str,"%d",data->volume[0]);
 		xmms_config_property_set_data(cv, volume_strp);
@@ -372,6 +375,7 @@ xmms_jack_volume_set (xmms_output_t *output,
 		/* If its not left, its right */
 		data->volume[1] = volume;
 		data->volume_actual[1] = (gfloat)(volume/100.0);
+		data->volume_actual[1] *= data->volume_actual[1];
 		cv = xmms_output_config_lookup (output, "RightVolume");
 		sprintf(volume_str,"%d",data->volume[1]);
 		xmms_config_property_set_data(cv, volume_strp);
