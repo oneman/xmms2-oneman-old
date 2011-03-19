@@ -55,12 +55,8 @@ static gboolean xmms_jack_new (xmms_output_t *output);
 static void xmms_jack_destroy (xmms_output_t *output);
 static gboolean xmms_jack_status (xmms_output_t *output, xmms_playback_status_t status);
 static void xmms_jack_flush (xmms_output_t *output);
-static gboolean xmms_jack_volume_set (xmms_output_t *output,
-                                      const gchar *channel,
-                                      guint volume);
-static gboolean xmms_jack_volume_get (xmms_output_t *output,
-                                      const gchar **names, guint *values,
-                                      guint *num_channels);
+static gboolean xmms_jack_volume_set (xmms_output_t *output, const gchar *channel, guint volume);
+static gboolean xmms_jack_volume_get (xmms_output_t *output, const gchar **names, guint *values, guint *num_channels);
 static int xmms_jack_process (jack_nframes_t frames, void *arg);
 static void xmms_jack_shutdown (void *arg);
 static void xmms_jack_error (const gchar *desc);
@@ -305,9 +301,9 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 			t = MIN (toread * CHANNELS * sizeof (xmms_samplefloat_t),
 			         sizeof (tbuf));
 
-			avail = xmms_output_bytes_available(output);
+			avail = xmms_output_bytes_available (output);
 
-			if(avail < t) {
+			if (avail < t) {
 				data->underruns++;
 				XMMS_DBG ("Jack Output Underun Number %d! Not Enough Bytes Availible. Wanted: %d Avail: %d", data->underruns, t, avail);
 				break;
@@ -353,7 +349,7 @@ xmms_jack_volume_set (xmms_output_t *output,
 	xmms_config_property_t *cv;
 	const gchar *volume_strp;
 	gchar volume_str[4];
-	
+
 	volume_strp = volume_str;
 
 	g_return_val_if_fail (output, FALSE);
@@ -369,16 +365,16 @@ xmms_jack_volume_set (xmms_output_t *output,
 		data->volume_actual[0] = (gfloat)(volume/100.0);
 		data->volume_actual[0] *= data->volume_actual[0];
 		cv = xmms_output_config_lookup (output, "LeftVolume");
-		sprintf(volume_str,"%d",data->volume[0]);
-		xmms_config_property_set_data(cv, volume_strp);
+		sprintf (volume_str,"%d",data->volume[0]);
+		xmms_config_property_set_data (cv, volume_strp);
 	} else {
 		/* If its not left, its right */
 		data->volume[1] = volume;
 		data->volume_actual[1] = (gfloat)(volume/100.0);
 		data->volume_actual[1] *= data->volume_actual[1];
 		cv = xmms_output_config_lookup (output, "RightVolume");
-		sprintf(volume_str,"%d",data->volume[1]);
-		xmms_config_property_set_data(cv, volume_strp);
+		sprintf (volume_str,"%d",data->volume[1]);
+		xmms_config_property_set_data (cv, volume_strp);
 	}
 
 	return TRUE;
