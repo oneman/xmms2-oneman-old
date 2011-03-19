@@ -735,7 +735,7 @@ xmms_output_filler (void *arg)
 						output->where_is_the_output_filler += 17;
 				}
 				output->where_is_the_output_filler = 18;
-				output->output_needs_to_switch_buffers = FALSE;
+				//output->output_needs_to_switch_buffers = FALSE;
 				g_atomic_int_set(&output->output_has_switched_buffers, 0);
 				}
 				}
@@ -849,6 +849,7 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 	if(output->output_needs_to_switch_buffers == TRUE) {
 		xmms_output_switchbuffers(output);
 		g_atomic_int_set(&output->output_has_switched_buffers, 1);
+		g_atomic_int_set(&output->output_needs_to_switch_buffers, 0);
 		XMMS_DBG ("switched buffers %d", g_atomic_int_get(&output->output_has_switched_buffers));
 	}
 
@@ -881,6 +882,14 @@ xmms_output_read_wait (xmms_output_t *output, char *buffer, gint len)
 guint
 xmms_output_bytes_available (xmms_output_t *output)
 {
+
+	if(output->output_needs_to_switch_buffers == TRUE) {
+		xmms_output_switchbuffers(output);
+		g_atomic_int_set(&output->output_has_switched_buffers, 1);
+		g_atomic_int_set(&output->output_needs_to_switch_buffers, 0);
+		XMMS_DBG ("switched buffers %d", g_atomic_int_get(&output->output_has_switched_buffers));
+	}
+
 	return xmms_ringbuf_bytes_used(output->filler_buffer);
 }
 
