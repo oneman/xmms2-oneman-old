@@ -371,7 +371,7 @@ xmms_output_filler_message (xmms_output_t *output, xmms_output_filler_message_t 
 {
 	int buf[1];
 	
-	buf[0] = message
+	buf[0] = message;
 	xmms_ringbuf_write(output->filler_messages, buf, 4);
 }
 
