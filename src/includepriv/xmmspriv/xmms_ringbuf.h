@@ -58,6 +58,7 @@ void xmms_ringbuf_hit_hotspot (xmms_ringbuf_t *ringbuf);
 
 void xmms_ringbuf_wait_free (const xmms_ringbuf_t *ringbuf, guint len, GMutex *mtx);
 void xmms_ringbuf_wait_used (const xmms_ringbuf_t *ringbuf, guint len, GMutex *mtx);
+gboolean xmms_ringbuf_timed_wait_used (const xmms_ringbuf_t *ringbuf, guint len, GMutex *mtx, guint ms);
 
 gboolean xmms_ringbuf_iseos (const xmms_ringbuf_t *ringbuf);
 void xmms_ringbuf_set_eos (xmms_ringbuf_t *ringbuf, gboolean eos);

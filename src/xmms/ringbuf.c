@@ -455,8 +455,32 @@ xmms_ringbuf_wait_used (const xmms_ringbuf_t *ringbuf, guint len, GMutex *mtx)
 	while ((xmms_ringbuf_bytes_used (ringbuf) < len) && !ringbuf->eos) {
 		g_get_current_time (&wait_time);
 		g_time_val_add (&wait_time, 30000);
-		g_cond_timed_wait (ringbuf->free_cond, mtx, &wait_time);
+		g_cond_timed_wait (ringbuf->used_cond, mtx, &wait_time);
 	}
+}
+
+
+/**
+ * Block until we have used space in the buffer
+ */
+
+gboolean
+xmms_ringbuf_timed_wait_used (const xmms_ringbuf_t *ringbuf, guint len, GMutex *mtx, guint ms)
+{
+	g_return_val_if_fail (ringbuf, FALSE);
+	g_return_val_if_fail (len > 0, FALSE);
+	g_return_val_if_fail (len <= ringbuf->buffer_size_usable, FALSE);
+	g_return_val_if_fail (mtx, FALSE);
+
+	GTimeVal wait_time;
+
+	if ((xmms_ringbuf_bytes_used (ringbuf) < len) && !ringbuf->eos) {
+		g_get_current_time (&wait_time);
+		g_time_val_add (&wait_time, (ms * 1000));
+		return g_cond_timed_wait (ringbuf->used_cond, mtx, &wait_time);
+	}
+	
+	return TRUE;
 }
 
 /**

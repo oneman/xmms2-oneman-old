@@ -37,17 +37,15 @@
 
 #define VOLUME_MAX_CHANNELS 128
 
-typedef enum xmms_output_filler_command_E {
+typedef enum xmms_output_filler_message_E {
 	STOP,		/* Stops filling, and dumps the buffer. */
 	RUN,		/* Filler is running, but often _waiting on ringbuf to have free space */
 	QUIT,		/* This actually ends the output filler thread */	
 	TICKLE,		/* Manual track change or tickle the filler to the next track */
 	SEEK,
 	NOOP,		/* this is for convience */
-} xmms_output_filler_command_t, xmms_output_filler_state_t;
+} xmms_output_filler_message_t, xmms_output_filler_state_t;
 
-
-typedef int xmms_output_filler_commands_t[NOOP + 1];
 
 typedef struct xmms_volume_map_St {
 	const gchar **names;
@@ -71,8 +69,7 @@ static gint32 xmms_playback_client_playtime (xmms_output_t *output, xmms_error_t
 
 static void xmms_playback_client_volume_set (xmms_output_t *output, const gchar *channel, gint32 volume, xmms_error_t *error);
 static GTree *xmms_playback_client_volume_get (xmms_output_t *output, xmms_error_t *error);
-static void xmms_output_filler_message_send (xmms_output_t *output, xmms_output_filler_command_t command);
-static void xmms_output_filler_command (xmms_output_t *output, xmms_output_filler_command_t command);
+static void xmms_output_filler_message (xmms_output_t *output, xmms_output_filler_message_t message);
 
 static void xmms_volume_map_init (xmms_volume_map_t *vl);
 static void xmms_volume_map_free (xmms_volume_map_t *vl);
@@ -122,13 +119,12 @@ struct xmms_output_St {
 	gint where_is_the_output_filler;
 	/* */
 
-	GAsyncQueue *filler_messages;
+	xmms_ringbuf_t *filler_messages;
 	gboolean tickled_when_paused;
 	gint chunksize;
 
-	xmms_output_filler_commands_t commands;
-
 	GThread *filler_thread;
+	GMutex *filler_mutex;
 	GMutex *read_mutex;
 
 	xmms_output_filler_state_t filler_state;
@@ -166,9 +162,6 @@ struct xmms_output_St {
 	GThread *monitor_volume_thread;
 	gboolean monitor_volume_running;
 };
-
-
-//typedef xmms_output_filler_command_t xmms_output_filler_state_t;
 
 /** @} */
 
@@ -322,7 +315,7 @@ song_changed (void *data)
 		XMMS_DBG ("Couldn't set format %s/%d/%d, stopping filler..",
 		          xmms_sample_name_get (fmt), rate, chn);
 
-		xmms_output_filler_command (arg->output, STOP);
+		xmms_output_filler_message (arg->output, STOP);
 		return FALSE;
 	}
 
@@ -361,63 +354,54 @@ seek_done_noskip (void *data)
 }
 
 static void
-xmms_output_filler_command (xmms_output_t *output, xmms_output_filler_command_t command)
-{
-	
-	xmms_output_filler_message_send(output, command);
-
-}
-
-static void
 xmms_output_filler_seek (xmms_output_t *output, gint samples)
 {
 
-	xmms_output_filler_command_t command;
+	xmms_output_filler_message_t message;
 
 	g_atomic_int_set(&output->filler_seek, samples);
-	command = SEEK;
+	message = SEEK;
 
-	xmms_output_filler_message_send(output, command);
+	xmms_output_filler_message(output, message);
 
 }
 
 static void
-xmms_output_filler_message_send (xmms_output_t *output, xmms_output_filler_command_t command)
+xmms_output_filler_message (xmms_output_t *output, xmms_output_filler_message_t message)
 {
-
-	g_async_queue_push (output->filler_messages, &output->commands[command]);
+	int buf[1];
 	
+	buf[0] = message
+	xmms_ringbuf_write(output->filler_messages, buf, 4);
 }
 
 static xmms_output_filler_state_t
 xmms_output_filler_check_for_message(xmms_output_t *output) {
 
-	int *new_filler_state_pointer;
-	xmms_output_filler_state_t new_filler_state;
+	int ret;
+	int buf[1];
 
-	new_filler_state_pointer = g_async_queue_try_pop(output->filler_messages);
+	ret = xmms_ringbuf_read(output->filler_messages, buf, 4);
 
-	if(new_filler_state_pointer != NULL) {
-		new_filler_state = new_filler_state_pointer - output->commands;
-		if(new_filler_state != output->filler_state) {
-			output->filler_state = new_filler_state;
-			return output->filler_state;
-		}
+	if(ret > 0) {
+		output->filler_state = buf[0];
+		return output->filler_state;
 	}
 
-	return FALSE;
+	return NOOP;
 
 }
 
 static xmms_output_filler_state_t
 xmms_output_filler_wait_for_message(xmms_output_t *output) {
 
-	int *new_filler_state_pointer;
+	int ret;
+	int buf[1];
 
-	new_filler_state_pointer = g_async_queue_pop(output->filler_messages);
+	ret = xmms_ringbuf_read_wait(output->filler_messages, buf, 4, output->filler_mutex);
 
-	if(new_filler_state_pointer != NULL) {
-		output->filler_state = new_filler_state_pointer - output->commands;
+	if(ret > 0) {
+		output->filler_state = buf[0];
 		return output->filler_state;
 	}
 
@@ -429,29 +413,31 @@ xmms_output_filler_wait_for_message(xmms_output_t *output) {
 static xmms_output_filler_state_t
 xmms_output_filler_wait_for_message_or_space(xmms_output_t *output) {
 
-	int *new_filler_state_pointer;
+	int ret;
+	int buf[1];
 	int free_bytes;
-	GTimeVal wait_time;
-
 
 	while(TRUE) {
-		g_get_current_time (&wait_time);
-		g_time_val_add (&wait_time, 30000);
 
-		new_filler_state_pointer = g_async_queue_timed_pop(output->filler_messages, &wait_time);
+		ret = xmms_ringbuf_timed_wait_used(output->filler_messages, 4, output->filler_mutex, 30);
 
-		if(new_filler_state_pointer != NULL) {
-			output->filler_state = new_filler_state_pointer - output->commands;
-			return output->filler_state;
+		if (ret == TRUE) {
+		
+			ret = xmms_ringbuf_read(output->filler_messages, buf, 4);
+		
+			if(ret > 0) {
+				output->filler_state = buf[0];
+				return output->filler_state;
+			}
+			
 		} else {
 			free_bytes = xmms_ringbuf_bytes_free(output->filler_buffer);
 			if(free_bytes >= output->chunksize){
 				output->filler_state = RUN;
 				return output->filler_state;
 			}
-			
+		
 		}
-
 	}
 
 }
@@ -480,7 +466,7 @@ xmms_output_filler (void *arg)
 			output->filler_state = output->new_internal_filler_state;
 			output->new_internal_filler_state = NOOP;
 		} else {
-			if(xmms_output_filler_check_for_message(output) != FALSE) {
+			if(xmms_output_filler_check_for_message(output) != NOOP) {
 				XMMS_DBG ("Output Filler Received New State: %d", output->filler_state );
 				continue;
 			}
@@ -821,7 +807,7 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 
 	ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
 	if (ret == 0 && xmms_ringbuf_iseos (output->filler_buffer)) {
-		xmms_output_filler_command (output, STOP);
+		xmms_output_filler_message (output, STOP);
 		xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_STOP);
 		return -1;
 	}
@@ -880,7 +866,7 @@ xmms_output_current_id (xmms_output_t *output)
 static void
 xmms_playback_client_xform_kill (xmms_output_t *output, xmms_error_t *error)
 {
-	xmms_output_filler_command (output, TICKLE);
+	xmms_output_filler_message (output, TICKLE);
 }
 
 static void
@@ -935,9 +921,9 @@ xmms_playback_client_start (xmms_output_t *output, xmms_error_t *err)
 			xmms_ringbuf_bytes_used(output->filler_buffer));
 
 	output->tickled_when_paused = FALSE;
-	xmms_output_filler_command (output, RUN);
+	xmms_output_filler_message (output, RUN);
 	if (!xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_PLAY)) {
-		xmms_output_filler_command (output, STOP);
+		xmms_output_filler_message (output, STOP);
 		xmms_error_set (err, XMMS_ERROR_GENERIC, "Could not start playback");
 	}
 
@@ -950,7 +936,7 @@ xmms_playback_client_stop (xmms_output_t *output, xmms_error_t *err)
 
 	xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_STOP);
 
-	xmms_output_filler_command (output, STOP);
+	xmms_output_filler_message (output, STOP);
 }
 
 static void
@@ -1153,10 +1139,8 @@ xmms_output_destroy (xmms_object_t *object)
 		output->monitor_volume_thread = NULL;
 	}
 
-	xmms_output_filler_command (output, QUIT);
+	xmms_output_filler_message (output, QUIT);
 	g_thread_join (output->filler_thread);
-
-	g_async_queue_unref (output->filler_messages);
 
 
 	if (output->plugin) {
@@ -1167,7 +1151,10 @@ xmms_output_destroy (xmms_object_t *object)
 
 	xmms_object_unref (output->playlist);
 
-
+	XMMS_DBG ("Freeing Filler Mutex");
+	g_mutex_unlock (output->filler_mutex);
+	g_mutex_free (output->filler_mutex);
+	
 	XMMS_DBG ("Freeing Status Mutex");
 	g_mutex_free (output->status_mutex);
 	XMMS_DBG ("Freeing Read Mutex");
@@ -1177,6 +1164,8 @@ xmms_output_destroy (xmms_object_t *object)
 	XMMS_DBG ("Freeing Ring Buffers");
 	xmms_ringbuf_destroy (output->filler_bufferA);
 	xmms_ringbuf_destroy (output->filler_bufferB);
+
+	xmms_ringbuf_destroy (output->filler_messages);
 
 	xmms_ipc_broadcast_unregister ( XMMS_IPC_SIGNAL_PLAYBACK_VOLUME_CHANGED);
 	xmms_ipc_broadcast_unregister ( XMMS_IPC_SIGNAL_PLAYBACK_STATUS);
@@ -1249,11 +1238,13 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	size = xmms_config_property_get_int (prop);
 	XMMS_DBG ("Using buffersize %d", size);
 
-	output->filler_messages = g_async_queue_new ();
+	output->filler_messages = xmms_ringbuf_new (128);
 
 	output->read_mutex = g_mutex_new ();
 	g_mutex_lock (output->read_mutex); /* because it has to be locked or unlocked to be freed */
 
+	output->filler_mutex = g_mutex_new ();
+	g_mutex_lock (output->filler_mutex); /* because it has to be locked or unlocked to be freed */
 
 	output->filler_state = STOP;
 	
