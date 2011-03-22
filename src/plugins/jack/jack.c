@@ -310,6 +310,8 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 				XMMS_DBG ("Jack Output Underun Number %d! Not Enough Bytes Availible. Wanted: %d Avail: %d", data->underruns, t, avail );
 				break;
 			}
+			
+			/*
 
 			hit_hotspot = 0;
 			xmms_output_get_vectors(output, output_vectors);
@@ -372,6 +374,31 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 				xmms_output_hit_hotspot(output);
 			}
 
+			*/
+			
+			
+			
+			res = xmms_output_read (output, (gchar *)tbuf, t);
+
+			if (res <= 0) {
+				XMMS_DBG ("output_read returned %d", res);
+				break;
+			}
+
+			if (res < t) {
+				XMMS_DBG ("Jack Output Underun! Not Enough Bytes Read!");
+				break;
+			}
+
+			res /= CHANNELS * sizeof (xmms_samplefloat_t);
+			for (i = 0; i < res; i++) {
+				for (j = 0; j < CHANNELS; j++) {
+					buf[j][i] = (tbuf[i*CHANNELS + j] * data->volume_actual[j]);
+				}
+			}
+			toread -= res;
+			
+			
 		}
 	}
 

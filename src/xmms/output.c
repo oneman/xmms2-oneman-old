@@ -20,6 +20,9 @@
  * Output plugin helper
  */
 
+/* TEMP */
+#include "fade.c"
+
 #include <string.h>
 #include <unistd.h>
 
@@ -107,6 +110,11 @@ XMMS_CMD_DEFINE (volume_get, xmms_playback_client_volume_get, xmms_output_t *, D
 
 struct xmms_output_St {
 	xmms_object_t object;
+
+	/* temp */
+	int sample_start_number;
+	int total_samples;
+	int in_or_out;
 
 	xmms_output_plugin_t *plugin;
 	gpointer plugin_data;
@@ -806,6 +814,20 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 
 
 	ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
+	XMMS_DBG ("Fade Chunk: SSN: %d LEN: %d TOTAL: %d INOROUT: %d", output->sample_start_number, ret, output->total_samples, output->in_or_out);
+	fade_chunk(buffer, output->sample_start_number, ret, output->total_samples, output->in_or_out);
+	
+	output->sample_start_number += ret / 4;
+	if (output->sample_start_number >= output->total_samples) {
+		output->sample_start_number = 0;
+		if(output->in_or_out == 1) {
+			output->in_or_out = 0;
+		} else {
+			output->in_or_out = 1;
+		}
+	
+	}
+	
 	if (ret == 0 && xmms_ringbuf_iseos (output->filler_buffer)) {
 		xmms_output_filler_message (output, STOP);
 		xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_STOP);
@@ -1259,6 +1281,11 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->filler_buffer = output->filler_bufferA;
 	output->switchbuffer_seek = FALSE;
 	output->switchcount = 0;
+	
+	output->in_or_out = 1;
+	output->sample_start_number = 0;
+	output->total_samples = 8192 * 16;
+	
 	output->switchbuffer_seek = FALSE;
 	output->output_needs_to_switch_buffers = FALSE;
 
