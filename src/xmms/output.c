@@ -73,6 +73,7 @@ static gint32 xmms_playback_client_playtime (xmms_output_t *output, xmms_error_t
 static void xmms_playback_client_volume_set (xmms_output_t *output, const gchar *channel, gint32 volume, xmms_error_t *error);
 static GTree *xmms_playback_client_volume_get (xmms_output_t *output, xmms_error_t *error);
 static void xmms_output_filler_message (xmms_output_t *output, xmms_output_filler_message_t message);
+static void fade_complete (xmms_output_t *output);
 
 static void xmms_volume_map_init (xmms_volume_map_t *vl);
 static void xmms_volume_map_free (xmms_volume_map_t *vl);
@@ -112,6 +113,7 @@ struct xmms_output_St {
 	xmms_object_t object;
 
 	/* temp */
+	int fade;
 	int sample_start_number;
 	int total_samples;
 	int in_or_out;
@@ -749,6 +751,25 @@ xmms_output_switchbuffers(xmms_output_t *output)
 
 }
 
+
+void
+fade_complete(xmms_output_t *output)
+{
+
+	if (output->fade == 1) {
+		output->fade = 2;
+		xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_PAUSE);
+	} else {
+
+		if (output->fade == 2) {
+			output->fade = 0;
+		}
+	}
+	
+	output->sample_start_number = 0;
+
+}
+
 void *
 xmms_output_get_inactive_buffer(xmms_output_t *output)
 {
@@ -814,19 +835,17 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 
 
 	ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
-	XMMS_DBG ("Fade Chunk: SSN: %d LEN: %d TOTAL: %d INOROUT: %d", output->sample_start_number, ret, output->total_samples, output->in_or_out);
-	fade_chunk(buffer, output->sample_start_number, ret, output->total_samples, output->in_or_out);
 	
-	output->sample_start_number += ret / 4;
-	if (output->sample_start_number >= output->total_samples) {
-		output->sample_start_number = 0;
-		if(output->in_or_out == 1) {
-			output->in_or_out = 0;
-		} else {
-			output->in_or_out = 1;
+	if(output->fade) {
+		XMMS_DBG ("Fade Chunk: SSN: %d LEN: %d TOTAL: %d INOROUT: %d", output->sample_start_number, ret, output->total_samples, output->fade - 1);
+		fade_chunk(buffer, output->sample_start_number, ret, output->total_samples, output->fade - 1);
+		output->sample_start_number += ret / 4;
+
+		if (output->sample_start_number >= output->total_samples) {
+			fade_complete(output);
 		}
-	
 	}
+	
 	
 	if (ret == 0 && xmms_ringbuf_iseos (output->filler_buffer)) {
 		xmms_output_filler_message (output, STOP);
@@ -955,6 +974,8 @@ static void
 xmms_playback_client_stop (xmms_output_t *output, xmms_error_t *err)
 {
 	g_return_if_fail (output);
+	
+	output->fade = 0;
 
 	xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_STOP);
 
@@ -966,7 +987,9 @@ xmms_playback_client_pause (xmms_output_t *output, xmms_error_t *err)
 {
 	g_return_if_fail (output);
 
-	xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_PAUSE);
+	output->fade = 1;
+
+	//xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_PAUSE);
 }
 
 
@@ -1272,6 +1295,7 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	
 	output->chunksize = 4096;
 	output->tickled_when_paused = FALSE;
+	output->fade = 0;
 
 	output->new_internal_filler_state = NOOP;
 
@@ -1284,7 +1308,7 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	
 	output->in_or_out = 1;
 	output->sample_start_number = 0;
-	output->total_samples = 8192 * 16;
+	output->total_samples = 8192 * 4;
 	
 	output->switchbuffer_seek = FALSE;
 	output->output_needs_to_switch_buffers = FALSE;
