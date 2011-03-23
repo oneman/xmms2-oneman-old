@@ -218,6 +218,7 @@ fade_chunk_s16(void *sample_buffer, int sample_start_number, int samples_in_chun
 				}
 			}
 			
+			// oh knows this could cause us to fade a different amount on a non zero crossing
 			if (current_fade_amount[j] == 0)
 				current_fade_amount[j] = next_fade_amount;
 			
@@ -315,6 +316,7 @@ fade_chunk_s32(void *sample_buffer, int sample_start_number, int samples_in_chun
 				}
 			}
 			
+			// oh knows this could cause us to fade a different amount on a non zero crossing
 			if (current_fade_amount[j] == 0)
 				current_fade_amount[j] = next_fade_amount;
 			

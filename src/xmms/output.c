@@ -869,7 +869,7 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 				int x;
 				for(x = 0; x < ret; x++)
 					buffer[x] = 0;
-				if (output->sample_start_number >= (output->total_samples + 8192 * 8)) {
+				if (output->sample_start_number >= (output->total_samples + 8192 * 12)) {
 					fade_complete(output);
 				}
 			} else {
@@ -1342,7 +1342,7 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	
 	output->in_or_out = 1;
 	output->sample_start_number = 0;
-	output->total_samples = 8192 * 8;
+	output->total_samples = 8192 * 6;
 	
 	output->switchbuffer_seek = FALSE;
 	output->output_needs_to_switch_buffers = FALSE;
