@@ -35,18 +35,8 @@
 
 #include <math.h>
 #include "xmms/xmms_log.h"
-/* ye prototypes */
 
-float get_fade_amount_per_sample(int sample_count);
-float get_crossfade_amount_per_sample(int sample_count);
-float db_to_value(float db);
-int crossfade(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_count);
-int fade_in(void *sample_buffer, int sample_count);
-int fade_out(void *sample_buffer, int sample_count);
-int fade_in_chunk(void *sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples);
-int fade_out_chunk(void *sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples);
-int fade_chunk(void *sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples, int in_or_out);
-int crossfade_chunk(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples);
+#include "xmmspriv/xmms_fade.h"
 
 /* ye functions */
 
@@ -174,6 +164,200 @@ fade_chunk(void *sample_buffer, int sample_start_number, int samples_in_chunk, i
 
 	return 0;
 }
+
+int
+fade_chunk_s16(void *sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples, int in_or_out) {
+
+	/* ok lets handle that void * and hard code it to float for now, is it possible to cast without a new var?? */
+	
+	gint16 *samples = (gint16*)sample_buffer;
+
+	/* well as with the sample type we dont really want to hard code the number of channels */
+	int number_of_channels, frames_in_chunk, total_frames;
+	number_of_channels = 2;
+	
+	frames_in_chunk = samples_in_chunk / number_of_channels;
+	total_frames = total_samples / number_of_channels;
+	
+
+	int i ,j;
+	int sign[number_of_channels], lastsign[number_of_channels];
+	float next_fade_amount;
+	gint32 current_fade_amount[number_of_channels];
+	
+	for (j = 0; j < number_of_channels; j++) {
+		current_fade_amount[j] = 0;
+		sign[j] = 0;
+		lastsign[j] = -1;
+	}
+	
+	int fuckit;
+	fuckit = 0;
+	
+	total_frames = total_frames / 2;
+	if(sample_start_number >= ((total_frames * 2)))
+		fuckit = 1;
+
+	for (i = 0; i < frames_in_chunk; i++) {
+		for (j = 0; j < number_of_channels; j++) {
+
+			/* 0 is fade out, 1 is fade in */
+			if(in_or_out) {	
+				next_fade_amount = ((float)(i + (sample_start_number / number_of_channels))* 100.0)/(float)total_frames;
+				next_fade_amount = next_fade_amount/10.0;
+				next_fade_amount = next_fade_amount * next_fade_amount;
+				if (fuckit == 1) {
+					next_fade_amount = 100;
+				}
+			} else {
+				next_fade_amount = ((float)(total_frames - (i + (sample_start_number / number_of_channels)))* 100.0)/(float)total_frames;
+				next_fade_amount = next_fade_amount/10.0;
+				next_fade_amount = next_fade_amount * next_fade_amount;
+				if (fuckit == 1) {
+					next_fade_amount = 0;
+				}
+			}
+			
+			if (current_fade_amount[j] == 0)
+				current_fade_amount[j] = next_fade_amount;
+			
+			if (samples[i*number_of_channels + j] >= 0) {
+				sign[j] = 1;
+			} else {
+				sign[j] = 0;
+			}
+			
+			if(lastsign[j] == -1)
+				lastsign[j] = sign[j];
+			
+			if (sign[j] != lastsign[j]) {
+				current_fade_amount[j] = next_fade_amount;
+				//XMMS_DBG ("Zero Crossing at %d", current_sample_number);
+				if(current_fade_amount[j] < 0)
+					current_fade_amount[j] = 0;
+				if(current_fade_amount[j] > 100)
+					current_fade_amount[j] = 100;
+			}
+
+		/*	if (i*number_of_channels + j == 515)	{
+			printf("i: %d total frames: %d", i, total_frames);
+							next_fade_amount = ((float)i * 100.0)/(float)total_frames;
+				printf("fade percent %f", next_fade_amount);
+				next_fade_amount = next_fade_amount/100.0;
+				next_fade_amount = next_fade_amount * next_fade_amount;
+
+			}*/
+			if (i*number_of_channels + j == frames_in_chunk)	{
+				printf("Current Sample: %d current fade amount: %d result ::: %d :::: \n", samples[i*number_of_channels + j], current_fade_amount[j],  ((samples[i*number_of_channels + j] * current_fade_amount[j]) / 100));
+			}
+			samples[i*number_of_channels + j] = ((samples[i*number_of_channels + j] * current_fade_amount[j]) / 100);
+
+			lastsign[j] = sign[j];
+
+		}
+		
+	}
+
+	return 0;
+}
+
+
+int
+fade_chunk_s32(void *sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples, int in_or_out) {
+
+	/* ok lets handle that void * and hard code it to float for now, is it possible to cast without a new var?? */
+	
+	gint32 *samples = (gint32*)sample_buffer;
+
+	/* well as with the sample type we dont really want to hard code the number of channels */
+	int number_of_channels, frames_in_chunk, total_frames;
+	number_of_channels = 2;
+	
+	frames_in_chunk = samples_in_chunk / number_of_channels;
+	total_frames = total_samples / number_of_channels;
+
+
+	int i ,j;
+	int sign[number_of_channels], lastsign[number_of_channels];
+	float next_fade_amount;
+	gint64 current_fade_amount[number_of_channels];
+	
+	for (j = 0; j < number_of_channels; j++) {
+		current_fade_amount[j] = 0;
+		sign[j] = 0;
+		lastsign[j] = -1;
+	}
+
+	int fuckit;
+	fuckit = 0;
+
+	total_frames = total_frames / 2;
+	if(sample_start_number >= ((total_frames * 2)))
+		fuckit = 1;
+
+	for (i = 0; i < frames_in_chunk; i++) {
+		for (j = 0; j < number_of_channels; j++) {
+
+			/* 0 is fade out, 1 is fade in */
+			if(in_or_out) {	
+				next_fade_amount = ((float)(i + (sample_start_number / number_of_channels))* 100.0)/(float)total_frames;
+				next_fade_amount = next_fade_amount/10.0;
+				next_fade_amount = next_fade_amount * next_fade_amount;
+				if (fuckit == 1) {
+					next_fade_amount = 100;
+				}
+			} else {
+				next_fade_amount = ((float)(total_frames - (i + (sample_start_number / number_of_channels)))* 100.0)/(float)total_frames;
+				next_fade_amount = next_fade_amount/10.0;
+				next_fade_amount = next_fade_amount * next_fade_amount;
+				if (fuckit == 1) {
+					next_fade_amount = 0;
+				}
+			}
+			
+			if (current_fade_amount[j] == 0)
+				current_fade_amount[j] = next_fade_amount;
+			
+			if (samples[i*number_of_channels + j] >= 0) {
+				sign[j] = 1;
+			} else {
+				sign[j] = 0;
+			}
+			
+			if(lastsign[j] == -1)
+				lastsign[j] = sign[j];
+			
+			if (sign[j] != lastsign[j]) {
+				current_fade_amount[j] = next_fade_amount;
+				//XMMS_DBG ("Zero Crossing at %d", current_sample_number);
+				if(current_fade_amount[j] < 0)
+					current_fade_amount[j] = 0;
+				if(current_fade_amount[j] > 100)
+					current_fade_amount[j] = 100;
+			}
+
+		/*	if (i*number_of_channels + j == 515)	{
+			printf("i: %d total frames: %d", i, total_frames);
+							next_fade_amount = ((float)i * 100.0)/(float)total_frames;
+				printf("fade percent %f", next_fade_amount);
+				next_fade_amount = next_fade_amount/100.0;
+				next_fade_amount = next_fade_amount * next_fade_amount;
+
+			}*/
+			if (i*number_of_channels + j == frames_in_chunk)	{
+				printf("Current Sample: %d current fade amount: %d result ::: %d :::: \n", samples[i*number_of_channels + j], current_fade_amount[j],  (gint32)(((gint64)samples[i*number_of_channels + j] * current_fade_amount[j]) / (gint64)100));
+			}
+			samples[i*number_of_channels + j] = (gint32)(((gint64)samples[i*number_of_channels + j] * current_fade_amount[j]) / (gint64)100);
+
+			lastsign[j] = sign[j];
+
+		}
+		
+	}
+
+	return 0;
+}
+
 
 int
 crossfade_chunk(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples) {

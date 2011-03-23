@@ -15,6 +15,7 @@ source = """
     medialib.c
     object.c
     error.c
+    fade.c
     output.c
     playlist.c
     collection.c

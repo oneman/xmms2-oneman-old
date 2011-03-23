@@ -20,8 +20,6 @@
  * Output plugin helper
  */
 
-/* TEMP */
-#include "fade.c"
 
 #include <string.h>
 #include <unistd.h>
@@ -37,6 +35,8 @@
 #include "xmms/xmms_ipc.h"
 #include "xmms/xmms_object.h"
 #include "xmms/xmms_config.h"
+
+#include "xmmspriv/xmms_fade.h"
 
 #define VOLUME_MAX_CHANNELS 128
 
@@ -833,16 +833,48 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 		g_atomic_int_set(&output->output_needs_to_switch_buffers, 0);
 	}
 
-
-	ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
+	if (!((output->fade == 1) && (output->sample_start_number >= output->total_samples)))
+		ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
 	
 	if(output->fade) {
-		XMMS_DBG ("Fade Chunk: SSN: %d LEN: %d TOTAL: %d INOROUT: %d", output->sample_start_number, ret, output->total_samples, output->fade - 1);
-		fade_chunk(buffer, output->sample_start_number, ret, output->total_samples, output->fade - 1);
-		output->sample_start_number += ret / 4;
-
-		if (output->sample_start_number >= output->total_samples) {
-			fade_complete(output);
+	
+	if (output->sample_start_number < output->total_samples) {
+	
+		XMMS_DBG ("Fade Chunk: SSN: %d LEN: %d TOTAL: %d INOROUT: %d", output->sample_start_number, ret / 2, output->total_samples, output->fade - 1);
+		
+		if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT)
+		{
+			XMMS_DBG ("got float");
+			fade_chunk(buffer, output->sample_start_number, ret, output->total_samples, output->fade - 1);
+			output->sample_start_number += ret / 4;
+		}
+		
+		if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S32)
+		{
+			XMMS_DBG ("got s32");
+			fade_chunk_s32(buffer, output->sample_start_number, ret / 4, output->total_samples, output->fade - 1);
+			output->sample_start_number += ret / 4;
+		}
+	
+		if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
+		{
+			XMMS_DBG ("got s16");
+			fade_chunk_s16(buffer, output->sample_start_number, ret / 2, output->total_samples, output->fade - 1);
+			output->sample_start_number += ret / 2;
+		}
+		
+	} else {
+			output->sample_start_number += len / 4;
+			if ((output->fade - 1) == 0) {
+				int x;
+				for(x = 0; x < ret; x++)
+					buffer[x] = 0;
+				if (output->sample_start_number >= (output->total_samples + 8192 * 8)) {
+					fade_complete(output);
+				}
+			} else {
+				fade_complete(output);
+			}
 		}
 	}
 	
@@ -853,7 +885,8 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 		return -1;
 	}
 
-	update_playtime (output, ret);
+	if (!((output->fade) && (output->sample_start_number >= output->total_samples)))
+		update_playtime (output, ret);
 
 	return ret;
 }
@@ -965,6 +998,7 @@ xmms_playback_client_start (xmms_output_t *output, xmms_error_t *err)
 	xmms_output_filler_message (output, RUN);
 	if (!xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_PLAY)) {
 		xmms_output_filler_message (output, STOP);
+		XMMS_DBG ("i friggin stopped playback");
 		xmms_error_set (err, XMMS_ERROR_GENERIC, "Could not start playback");
 	}
 
@@ -1308,7 +1342,7 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	
 	output->in_or_out = 1;
 	output->sample_start_number = 0;
-	output->total_samples = 8192 * 4;
+	output->total_samples = 8192 * 8;
 	
 	output->switchbuffer_seek = FALSE;
 	output->output_needs_to_switch_buffers = FALSE;
