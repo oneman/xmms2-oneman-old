@@ -42,8 +42,11 @@ guint xmms_ringbuf_read_wait (xmms_ringbuf_t *ringbuf, gpointer data, guint leng
 guint xmms_ringbuf_peek (xmms_ringbuf_t *ringbuf, gpointer data, guint length);
 guint xmms_ringbuf_peek_wait (xmms_ringbuf_t *ringbuf, gpointer data, guint length, GMutex *mtx);
 void xmms_ringbuf_hotspot_set (xmms_ringbuf_t *ringbuf, gboolean (*cb) (void *), void (*destroy) (void *), void *arg);
+guint xmms_ringbuf_write_reverse (xmms_ringbuf_t *ringbuf, gconstpointer data, guint length);
 guint xmms_ringbuf_write (xmms_ringbuf_t *ringbuf, gconstpointer data, guint length);
 guint xmms_ringbuf_write_wait (xmms_ringbuf_t *ringbuf, gconstpointer data, guint length, GMutex *mtx);
+
+void reverse_memcpy(guint8 *dst,  guint8 *src, guint n);
 
 void xmms_ringbuf_write_advance(xmms_ringbuf_t *rb, gint cnt);
 void xmms_ringbuf_read_advance(xmms_ringbuf_t *rb, gint cnt);

@@ -390,6 +390,126 @@ xmms_ringbuf_write (xmms_ringbuf_t *ringbuf, gconstpointer data,
 	return w;
 }
 
+
+/**
+ * Write data to the ringbuffer, backwards. 
+ * If not all data can be written
+ * to the buffer the function will not block.
+ *
+ * @sa xmms_ringbuf_write_wait
+ *
+ * @param ringbuf Ringbuffer to put data in.
+ * @param data Data to put in ringbuffer
+ * @param len Length of data
+ * @returns Number of bytes that was written
+ */
+guint
+xmms_ringbuf_write_reverse (xmms_ringbuf_t *ringbuf, gconstpointer data,
+                    guint len)
+{
+	guint to_write, bytes_free, w = 0, cnt;
+	const guint8 *src = data;
+
+	g_return_val_if_fail (ringbuf, 0);
+	g_return_val_if_fail (data, 0);
+	g_return_val_if_fail (len > 0, 0);
+
+	bytes_free = xmms_ringbuf_bytes_free (ringbuf);
+	to_write = MIN (len, bytes_free);
+	
+	guint8 tmp[4096];
+	guint8 tmp2[4096];
+	guint8 *tmpp = tmp;
+	guint8 *tmpp2 = tmp2;
+	const guint8 *tmpp3 = tmp2;
+	
+	memcpy( tmpp2, src, 4096 );
+	//tmpp2 = tmp2;
+	//reverse_memcpy (tmp, tmp2, 4096);
+	//reverse_memcpy (src, tmp, len);
+
+ gint16 i,j,n;
+ 
+ n = 4096;
+  
+ for(i=0, j=n-4 ; i<n ; i+=4, j-=4)
+ { 
+ 
+ 
+ tmp[j] = tmp2[i];
+ tmp[j + 1] = tmp2[i + 1];
+ tmp[j + 2] = tmp2[i + 2];
+ tmp[j + 3] = tmp2[i + 3];
+ 
+ 
+ }
+ 
+ /*
+  for(i=0, j=n-4 ; i<n ; i+=4, j-=4)
+ { 
+ 
+ 
+
+ tmp[i] = tmp2[i];
+ tmp[i + 1] = tmp2[i + 1];
+ tmp[i + 2] = tmp2[i + 2];
+ tmp[i + 3] = tmp2[i + 3];
+ 
+ 
+ }
+ */
+ 
+//  { memcpy( &tmpp[j], &tmp2[i], 4 );    }
+ 
+
+	while (to_write > 0) {
+		cnt = MIN (to_write, ringbuf->buffer_size - ringbuf->wr_index);
+		//memcpy (ringbuf->buffer + ringbuf->wr_index, src + w, cnt);
+		//reverse_memcpy (ringbuf->buffer + ringbuf->wr_index, src, cnt, w);
+		memcpy (ringbuf->buffer + ringbuf->wr_index, tmp + w, cnt);
+		ringbuf->wr_index = (ringbuf->wr_index + cnt) % ringbuf->buffer_size;
+		to_write -= cnt;
+		w += cnt; 
+	}
+
+	if (w) {
+		g_cond_broadcast (ringbuf->used_cond);
+	}
+
+	return w;
+}
+
+void
+reverse_memcpy(guint8 *dst,  guint8 *src, guint n)
+{
+
+ n = n;
+
+ gint8 i,j; 
+ 
+ guint8 *d, *s;
+ 
+ s = src;
+ d = dst;
+ 
+ //for(i=0, j=n-4 ; i<n ; i+=4, j-=4)
+ // for(i=0, j=0; i<n ; i+=4, j+=4)
+ for(; 0<n; --n)
+  { 
+  //memcpy( dst + j, src + i, 4 );    
+  //memcpy( &dst[j], &src[i], 4 );    
+  //memcpy( d, s, 4096 );
+  
+
+  	*d++ = s + n;
+  /*	*d = *s;
+ 	*d + (j + 1) = *s + (i + 1);
+ 	*d + (j + 2) = *s + (i + 2);
+ 	*d + (j + 3) = *s + (i + 3);
+*/
+	}
+}
+
 /**
  * Same as #xmms_ringbuf_write but blocks until there is enough free space.
  */
@@ -417,6 +537,8 @@ xmms_ringbuf_write_wait (xmms_ringbuf_t *ringbuf, gconstpointer data,
 
 	return w;
 }
+
+
 
 /**
  * Block until we have free space in the ringbuffer.
