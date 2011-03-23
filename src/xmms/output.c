@@ -840,25 +840,25 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 	
 	if (output->sample_start_number < output->total_samples) {
 	
-		XMMS_DBG ("Fade Chunk: SSN: %d LEN: %d TOTAL: %d INOROUT: %d", output->sample_start_number, ret / 2, output->total_samples, output->fade - 1);
+		//XMMS_DBG ("Fade Chunk: SSN: %d LEN: %d TOTAL: %d INOROUT: %d", output->sample_start_number, ret / 2, output->total_samples, output->fade - 1);
 		
 		if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT)
 		{
-			XMMS_DBG ("got float");
+			//XMMS_DBG ("got float");
 			fade_chunk(buffer, output->sample_start_number, ret, output->total_samples, output->fade - 1);
 			output->sample_start_number += ret / 4;
 		}
 		
 		if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S32)
 		{
-			XMMS_DBG ("got s32");
+			//XMMS_DBG ("got s32");
 			fade_chunk_s32(buffer, output->sample_start_number, ret / 4, output->total_samples, output->fade - 1);
 			output->sample_start_number += ret / 4;
 		}
 	
 		if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
 		{
-			XMMS_DBG ("got s16");
+			//XMMS_DBG ("got s16");
 			fade_chunk_s16(buffer, output->sample_start_number, ret / 2, output->total_samples, output->fade - 1);
 			output->sample_start_number += ret / 2;
 		}

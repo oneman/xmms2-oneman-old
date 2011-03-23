@@ -247,10 +247,10 @@ fade_chunk_s16(void *sample_buffer, int sample_start_number, int samples_in_chun
 				next_fade_amount = next_fade_amount/100.0;
 				next_fade_amount = next_fade_amount * next_fade_amount;
 
-			}*/
+			}
 			if (i*number_of_channels + j == frames_in_chunk)	{
 				printf("Current Sample: %d current fade amount: %d result ::: %d :::: \n", samples[i*number_of_channels + j], current_fade_amount[j],  ((samples[i*number_of_channels + j] * current_fade_amount[j]) / 100));
-			}
+			}*/
 			samples[i*number_of_channels + j] = ((samples[i*number_of_channels + j] * current_fade_amount[j]) / 100);
 
 			lastsign[j] = sign[j];
@@ -345,10 +345,10 @@ fade_chunk_s32(void *sample_buffer, int sample_start_number, int samples_in_chun
 				next_fade_amount = next_fade_amount/100.0;
 				next_fade_amount = next_fade_amount * next_fade_amount;
 
-			}*/
+			}
 			if (i*number_of_channels + j == frames_in_chunk)	{
 				printf("Current Sample: %d current fade amount: %d result ::: %d :::: \n", samples[i*number_of_channels + j], current_fade_amount[j],  (gint32)(((gint64)samples[i*number_of_channels + j] * current_fade_amount[j]) / (gint64)100));
-			}
+			}*/
 			samples[i*number_of_channels + j] = (gint32)(((gint64)samples[i*number_of_channels + j] * current_fade_amount[j]) / (gint64)100);
 
 			lastsign[j] = sign[j];
