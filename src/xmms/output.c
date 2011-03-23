@@ -1342,7 +1342,7 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	
 	output->in_or_out = 1;
 	output->sample_start_number = 0;
-	output->total_samples = 8192 * 6;
+	output->total_samples = 8192 * 8;
 	
 	output->switchbuffer_seek = FALSE;
 	output->output_needs_to_switch_buffers = FALSE;
