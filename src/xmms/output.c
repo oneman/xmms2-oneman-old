@@ -117,7 +117,10 @@ struct xmms_output_St {
 	int sample_start_number;
 	int total_samples;
 	int in_or_out;
-
+	guint8 fadebuffer[64 * 4096];
+	guint8 ffadebuffer[64 * 4096];
+	int crossfade;
+	int crossfade_total;
 	xmms_output_plugin_t *plugin;
 	gpointer plugin_data;
 
@@ -828,13 +831,45 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 	g_return_val_if_fail (output, -1);
 	g_return_val_if_fail (buffer, -1);
 
+
+
 	if(output->output_needs_to_switch_buffers == TRUE) {
+		output->crossfade = xmms_ringbuf_read (output->filler_buffer, output->fadebuffer, 64 * 4096);
+		output->crossfade = output->crossfade / 2;
+		output->crossfade_total = output->crossfade;
+		
 		xmms_output_switchbuffers(output);
 		g_atomic_int_set(&output->output_needs_to_switch_buffers, 0);
-	}
-
-	if (!((output->fade == 1) && (output->sample_start_number >= output->total_samples)))
+		
 		ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
+		
+		crossfade_chunk_s16(output->fadebuffer, 0, buffer, buffer, 0, len / 2, output->crossfade_total);
+		
+		output->crossfade = output->crossfade - len / 2;
+	} else {
+
+	if (!((output->fade == 1) && (output->sample_start_number >= output->total_samples))) {
+	
+		if(output->crossfade > 0) {		
+		
+			ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
+			
+			crossfade_chunk_s16(&output->fadebuffer, output->crossfade_total - output->crossfade, buffer, buffer, output->crossfade_total - output->crossfade, len / 2, output->crossfade_total);
+
+			output->crossfade = output->crossfade - len / 2;
+			
+			if (output->crossfade < len / 4) {
+					output->crossfade = 0;
+					output->crossfade_total = 0;
+			}
+			
+		} else {
+			ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
+		}
+
+		}
+	}
+	
 	
 	if(output->fade) {
 	
@@ -1326,10 +1361,16 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	g_mutex_lock (output->filler_mutex); /* because it has to be locked or unlocked to be freed */
 
 	output->filler_state = STOP;
-	
+	output->crossfade = 0;
+	output->crossfade_total = 0;
 	output->chunksize = 4096;
 	output->tickled_when_paused = FALSE;
 	output->fade = 0;
+	int y;
+
+	for(y = 0; y < 64 * 4096; y++)
+		output->ffadebuffer[y] = 0;
+
 
 	output->new_internal_filler_state = NOOP;
 
