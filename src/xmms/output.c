@@ -117,8 +117,7 @@ struct xmms_output_St {
 	int sample_start_number;
 	int total_samples;
 	int in_or_out;
-	guint8 fadebuffer[64 * 4096];
-	guint8 ffadebuffer[64 * 4096];
+	guint8 fadebuffer[256 * 4096];
 	int crossfade;
 	int crossfade_total;
 	xmms_output_plugin_t *plugin;
@@ -1405,10 +1404,7 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->chunksize = 4096;
 	output->tickled_when_paused = FALSE;
 	output->fade = 0;
-	int y;
 
-	for(y = 0; y < 64 * 4096; y++)
-		output->ffadebuffer[y] = 0;
 
 
 	output->new_internal_filler_state = NOOP;
