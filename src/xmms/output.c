@@ -705,7 +705,7 @@ xmms_output_filler (void *arg)
 						output->switchbuffer_seek = FALSE;
 						output->output_needs_to_switch_buffers = TRUE;
 						xmms_ringbuf_set_eos(output->filler_buffer, TRUE);
-						XMMS_DBG ("Switching buffers!");
+						XMMS_DBG ("Switching buffers! ");
 						while(g_atomic_int_get(&output->output_needs_to_switch_buffers) == TRUE) {
 							g_usleep(12000);
 						}
@@ -835,17 +835,35 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 
 	if(output->output_needs_to_switch_buffers == TRUE) {
 		output->crossfade = xmms_ringbuf_read (output->filler_buffer, output->fadebuffer, 64 * 4096);
-		output->crossfade = output->crossfade / 2;
-		output->crossfade_total = output->crossfade;
+
 		
 		xmms_output_switchbuffers(output);
 		g_atomic_int_set(&output->output_needs_to_switch_buffers, 0);
 		
 		ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
 		
-		crossfade_chunk_s16(output->fadebuffer, 0, buffer, buffer, 0, len / 2, output->crossfade_total);
+		if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
+		{
+		output->crossfade = output->crossfade / 2;
+		output->crossfade_total = output->crossfade;
+			crossfade_chunk_s16(output->fadebuffer, buffer, buffer, 0, len / 2, output->crossfade_total);
+	output->crossfade = output->crossfade - len / 2;
+		}
+				if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S32)
+		{
+		output->crossfade = output->crossfade / 4;
+		output->crossfade_total = output->crossfade;
+				crossfade_chunk_s32(output->fadebuffer, buffer, buffer, 0, len / 4, output->crossfade_total);
+	output->crossfade = output->crossfade - len / 4;
+		}
+				if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT)
+		{
+		output->crossfade = output->crossfade / 4;
+		output->crossfade_total = output->crossfade;
+				crossfade_chunk(output->fadebuffer, buffer, buffer, 0, len / 4, output->crossfade_total);
+	output->crossfade = output->crossfade - len / 4;			
+		}
 		
-		output->crossfade = output->crossfade - len / 2;
 	} else {
 
 	if (!((output->fade == 1) && (output->sample_start_number >= output->total_samples))) {
@@ -854,11 +872,32 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 		
 			ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
 			
-			crossfade_chunk_s16(&output->fadebuffer, output->crossfade_total - output->crossfade, buffer, buffer, output->crossfade_total - output->crossfade, len / 2, output->crossfade_total);
 
-			output->crossfade = output->crossfade - len / 2;
+
+
 			
-			if (output->crossfade < len / 4) {
+			
+					if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
+		{
+			crossfade_chunk_s16(&output->fadebuffer, buffer, buffer, output->crossfade_total - output->crossfade, len / 2, output->crossfade_total);
+	output->crossfade = output->crossfade - len / 2;
+		}
+				if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S32)
+		{
+			crossfade_chunk_s32(&output->fadebuffer, buffer, buffer, output->crossfade_total - output->crossfade, len / 4, output->crossfade_total);
+	output->crossfade = output->crossfade - len / 4;
+		}
+				if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT)
+		{
+		
+
+			crossfade_chunk(&output->fadebuffer, buffer, buffer, output->crossfade_total - output->crossfade, len / 4, output->crossfade_total);
+	output->crossfade = output->crossfade - len / 4;			
+		}
+			
+			
+			
+			if (output->crossfade < len / 8) {
 					output->crossfade = 0;
 					output->crossfade_total = 0;
 			}
@@ -938,10 +977,10 @@ xmms_output_read_wait (xmms_output_t *output, char *buffer, gint len)
 guint
 xmms_output_bytes_available (xmms_output_t *output)
 {
-	if (output->output_needs_to_switch_buffers == TRUE) {
-		xmms_output_switchbuffers(output);
-		g_atomic_int_set(&output->output_needs_to_switch_buffers, 0);
-	}
+	//if (output->output_needs_to_switch_buffers == TRUE) {
+	//	xmms_output_switchbuffers(output);
+	//	g_atomic_int_set(&output->output_needs_to_switch_buffers, 0);
+	//}
 
 	return xmms_ringbuf_bytes_used(output->filler_buffer);
 }

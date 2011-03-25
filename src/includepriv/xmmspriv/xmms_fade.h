@@ -13,6 +13,6 @@ int fade_chunk_s16(void *sample_buffer, int sample_start_number, int samples_in_
 int fade_chunk_s32(void *sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples, int in_or_out);
 int crossfade_chunk(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples);
 
-int crossfade_chunk_s16(void *sample_buffer_from, int fadeoffset, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples);
+int crossfade_chunk_s16(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples);
 int crossfade_chunk_s32(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples);
 
