@@ -840,6 +840,8 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 		g_atomic_int_set(&output->output_needs_to_switch_buffers, 0);
 		
 		ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
+
+		if(output->crossfade > 0) {		
 		
 		if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
 		{
@@ -862,6 +864,7 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 				crossfade_chunk(output->fadebuffer, buffer, buffer, 0, len / 4, output->crossfade_total);
 	output->crossfade = output->crossfade - len / 4;			
 		}
+	}
 		
 	} else {
 
