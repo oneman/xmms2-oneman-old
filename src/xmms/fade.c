@@ -1,44 +1,11 @@
-/*
-*		libfaded -0.1 alpha
-* 
-*		note: this has never been compiled, its a brain dump in c
-*
-*		libfaded is a set of functions to prevent the harshing of mellows caused by popping/chunking 
-*		sounds on the pausing, resuming, stopping, seeking and track jumping of music or any other audio
-*		prone to abrupt starting stopping or changing. 
-*
-*		It is able to fade in or out from silence or fade between two tracks in a linear way
-*		It is designed to work either with the entire peice of audio you desire to be faded or
-*		with any chunk thereof 
-*
-*		intended usage examples (whole peices):
-*
-*									 crossfade(from_buffer, to_buffer, mixed_buffer, int sample_count)
-*									 		reads from two buffers, writing to a third
-*
-*									 fade_in(buffer, int sample_count)
-*											writes the faded samples to the buffer provided										
-*	
-*		partial examples:
-*
-*						fade_out_chunk(sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples)
-*							writes to the buffer provided
-*
-*						crossfade_chunk(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples)
-*									 		reads from two buffers, writing to a third
-*
-*
-*		Todo: Compile and test, make sample type independent, and probably channel count indepentant
-*		Future: Nonlinear fades? Something like jquery easing perhaps?
-*
-*/
+
 
 #include <math.h>
 #include "xmms/xmms_log.h"
 
 #include "xmmspriv/xmms_fade.h"
 
-/* ye functions */
+
 
 float
 get_fade_amount_per_sample(int sample_count) {
@@ -240,17 +207,6 @@ fade_chunk_s16(void *sample_buffer, int sample_start_number, int samples_in_chun
 					current_fade_amount[j] = 100;
 			}
 
-		/*	if (i*number_of_channels + j == 515)	{
-			printf("i: %d total frames: %d", i, total_frames);
-							next_fade_amount = ((float)i * 100.0)/(float)total_frames;
-				printf("fade percent %f", next_fade_amount);
-				next_fade_amount = next_fade_amount/100.0;
-				next_fade_amount = next_fade_amount * next_fade_amount;
-
-			}
-			if (i*number_of_channels + j == frames_in_chunk)	{
-				printf("Current Sample: %d current fade amount: %d result ::: %d :::: \n", samples[i*number_of_channels + j], current_fade_amount[j],  ((samples[i*number_of_channels + j] * current_fade_amount[j]) / 100));
-			}*/
 			samples[i*number_of_channels + j] = ((samples[i*number_of_channels + j] * current_fade_amount[j]) / 100);
 
 			lastsign[j] = sign[j];
@@ -338,17 +294,6 @@ fade_chunk_s32(void *sample_buffer, int sample_start_number, int samples_in_chun
 					current_fade_amount[j] = 100;
 			}
 
-		/*	if (i*number_of_channels + j == 515)	{
-			printf("i: %d total frames: %d", i, total_frames);
-							next_fade_amount = ((float)i * 100.0)/(float)total_frames;
-				printf("fade percent %f", next_fade_amount);
-				next_fade_amount = next_fade_amount/100.0;
-				next_fade_amount = next_fade_amount * next_fade_amount;
-
-			}
-			if (i*number_of_channels + j == frames_in_chunk)	{
-				printf("Current Sample: %d current fade amount: %d result ::: %d :::: \n", samples[i*number_of_channels + j], current_fade_amount[j],  (gint32)(((gint64)samples[i*number_of_channels + j] * current_fade_amount[j]) / (gint64)100));
-			}*/
 			samples[i*number_of_channels + j] = (gint32)(((gint64)samples[i*number_of_channels + j] * current_fade_amount[j]) / (gint64)100);
 
 			lastsign[j] = sign[j];
@@ -396,20 +341,13 @@ crossfade_chunk(void *sample_buffer_from, void *sample_buffer_to, void *faded_sa
 	int fuckit;
 	fuckit = 0;
 	
-	/*total_frames = total_frames / 2;
-	if(sample_start_number >= ((total_frames * 2)))
-		fuckit = 1;
-*/
+
 	for (i = 0; i < frames_in_chunk; i++) {
 		for (j = 0; j < number_of_channels; j++) {
 
-			/* 0 is fade out, 1 is fade in */
-			//if(in_or_out) {	
-				//next_in_fade_amount = ((float)(i + (sample_start_number / number_of_channels))* 100.0)/(float)total_frames;
-				//next_in_fade_amount = next_in_fade_amount/10.0;
 
 				next_in_fade_amount = cos(3.14159*0.5*(((float)(i + (sample_start_number / number_of_channels)))  + 0.5)/(float)total_frames);
-				//next_fade_amount = next_fade_amount/10.0;
+
 				next_in_fade_amount = next_in_fade_amount * next_in_fade_amount;
 				next_in_fade_amount = 1 - next_in_fade_amount;
 
@@ -417,23 +355,19 @@ crossfade_chunk(void *sample_buffer_from, void *sample_buffer_to, void *faded_sa
 				if (fuckit == 1) {
 					next_in_fade_amount = 100;
 				}
-			//} else {
-				//next_fade_amount = ((float)(total_frames - (i + (sample_start_number / number_of_channels)))* 100.0)/(float)total_frames;
-				//next_fade_amount = next_fade_amount/10.0;
-				//next_fade_amount = next_fade_amount * next_fade_amount;
 							
 				
 				next_fade_amount = cos(3.14159*0.5*(((float)(i + (sample_start_number / number_of_channels))) + 0.5)/(float)total_frames);
-				//next_fade_amount = next_fade_amount/10.0;
+
 				next_fade_amount = next_fade_amount * next_fade_amount;
-				//next_fade_amount = 1 - next_fade_amount;
+
 				
 				if (fuckit == 1) {
 					next_fade_amount = 0;
 				}
-			//}
+
 			
-			// oh knows this could cause us to fade a different amount on a non zero crossing
+
 			if (current_fade_amount[0][j] == 0) {
 				current_fade_amount[1][j] = next_in_fade_amount;
 				current_fade_amount[0][j] = next_fade_amount;
@@ -473,19 +407,6 @@ crossfade_chunk(void *sample_buffer_from, void *sample_buffer_to, void *faded_sa
 			}
 
 		}
-
-		/*	if (i*number_of_channels + j == 515)	{
-			printf("i: %d total frames: %d", i, total_frames);
-							next_fade_amount = ((float)i * 100.0)/(float)total_frames;
-				printf("fade percent %f", next_fade_amount);
-				next_fade_amount = next_fade_amount/100.0;
-				next_fade_amount = next_fade_amount * next_fade_amount;
-
-			}
-			if (i*number_of_channels + j == frames_in_chunk)	{
-				printf("Current Sample: %d current fade amount: %d result ::: %d :::: \n", samples[i*number_of_channels + j], current_fade_amount[j],  ((samples[i*number_of_channels + j] * current_fade_amount[j]) / 100));
-			}*/
-			//faded_samples[i*number_of_channels + j] = ((((samples_from[fadeoffset + i*number_of_channels + j] * current_fade_amount[0][j]) / 100) + ((samples_to[i*number_of_channels + j] * current_fade_amount[1][j]) / 100)) / 2);
 
 			faded_samples[i*number_of_channels + j] = ((((samples_from[sample_start_number + i*number_of_channels + j] * current_fade_amount[0][j]) ) + ((samples_to[i*number_of_channels + j] * current_fade_amount[1][j]) )) );
 
@@ -534,20 +455,14 @@ crossfade_chunk_s16(void *sample_buffer_from, void *sample_buffer_to, void *fade
 	int fuckit;
 	fuckit = 0;
 	
-	/*total_frames = total_frames / 2;
-	if(sample_start_number >= ((total_frames * 2)))
-		fuckit = 1;
-*/
+
 	for (i = 0; i < frames_in_chunk; i++) {
 		for (j = 0; j < number_of_channels; j++) {
 
-			/* 0 is fade out, 1 is fade in */
-			//if(in_or_out) {	
-				//next_in_fade_amount = ((float)(i + (sample_start_number / number_of_channels))* 100.0)/(float)total_frames;
-				//next_in_fade_amount = next_in_fade_amount/10.0;
+
 
 				next_in_fade_amount = cos(3.14159*0.5*(((float)(i + (sample_start_number / number_of_channels)))  + 0.5)/(float)total_frames);
-				//next_fade_amount = next_fade_amount/10.0;
+
 				next_in_fade_amount = next_in_fade_amount * next_in_fade_amount;
 				next_in_fade_amount = 1 - next_in_fade_amount;
 
@@ -555,16 +470,13 @@ crossfade_chunk_s16(void *sample_buffer_from, void *sample_buffer_to, void *fade
 				if (fuckit == 1) {
 					next_in_fade_amount = 100;
 				}
-			//} else {
-				//next_fade_amount = ((float)(total_frames - (i + (sample_start_number / number_of_channels)))* 100.0)/(float)total_frames;
-				//next_fade_amount = next_fade_amount/10.0;
-				//next_fade_amount = next_fade_amount * next_fade_amount;
+
 							
 				
 				next_fade_amount = cos(3.14159*0.5*(((float)(i + (sample_start_number / number_of_channels))) + 0.5)/(float)total_frames);
-				//next_fade_amount = next_fade_amount/10.0;
+
 				next_fade_amount = next_fade_amount * next_fade_amount;
-				//next_fade_amount = 1 - next_fade_amount;
+
 				
 				if (fuckit == 1) {
 					next_fade_amount = 0;
@@ -611,19 +523,6 @@ crossfade_chunk_s16(void *sample_buffer_from, void *sample_buffer_to, void *fade
 			}
 
 		}
-
-		/*	if (i*number_of_channels + j == 515)	{
-			printf("i: %d total frames: %d", i, total_frames);
-							next_fade_amount = ((float)i * 100.0)/(float)total_frames;
-				printf("fade percent %f", next_fade_amount);
-				next_fade_amount = next_fade_amount/100.0;
-				next_fade_amount = next_fade_amount * next_fade_amount;
-
-			}
-			if (i*number_of_channels + j == frames_in_chunk)	{
-				printf("Current Sample: %d current fade amount: %d result ::: %d :::: \n", samples[i*number_of_channels + j], current_fade_amount[j],  ((samples[i*number_of_channels + j] * current_fade_amount[j]) / 100));
-			}*/
-			//faded_samples[i*number_of_channels + j] = ((((samples_from[fadeoffset + i*number_of_channels + j] * current_fade_amount[0][j]) / 100) + ((samples_to[i*number_of_channels + j] * current_fade_amount[1][j]) / 100)) / 2);
 
 			faded_samples[i*number_of_channels + j] = ((((samples_from[sample_start_number + i*number_of_channels + j] * current_fade_amount[0][j]) ) + ((samples_to[i*number_of_channels + j] * current_fade_amount[1][j]) )) );
 
@@ -672,20 +571,13 @@ crossfade_chunk_s32(void *sample_buffer_from, void *sample_buffer_to, void *fade
 	int fuckit;
 	fuckit = 0;
 	
-	/*total_frames = total_frames / 2;
-	if(sample_start_number >= ((total_frames * 2)))
-		fuckit = 1;
-*/
 	for (i = 0; i < frames_in_chunk; i++) {
 		for (j = 0; j < number_of_channels; j++) {
 
-			/* 0 is fade out, 1 is fade in */
-			//if(in_or_out) {	
-				//next_in_fade_amount = ((float)(i + (sample_start_number / number_of_channels))* 100.0)/(float)total_frames;
-				//next_in_fade_amount = next_in_fade_amount/10.0;
+
 
 				next_in_fade_amount = cos(3.14159*0.5*(((float)(i + (sample_start_number / number_of_channels)))  + 0.5)/(float)total_frames);
-				//next_fade_amount = next_fade_amount/10.0;
+
 				next_in_fade_amount = next_in_fade_amount * next_in_fade_amount;
 				next_in_fade_amount = 1 - next_in_fade_amount;
 
@@ -693,21 +585,18 @@ crossfade_chunk_s32(void *sample_buffer_from, void *sample_buffer_to, void *fade
 				if (fuckit == 1) {
 					next_in_fade_amount = 100;
 				}
-			//} else {
-				//next_fade_amount = ((float)(total_frames - (i + (sample_start_number / number_of_channels)))* 100.0)/(float)total_frames;
-				//next_fade_amount = next_fade_amount/10.0;
-				//next_fade_amount = next_fade_amount * next_fade_amount;
+
 							
 				
 				next_fade_amount = cos(3.14159*0.5*(((float)(i + (sample_start_number / number_of_channels))) + 0.5)/(float)total_frames);
-				//next_fade_amount = next_fade_amount/10.0;
+
 				next_fade_amount = next_fade_amount * next_fade_amount;
-				//next_fade_amount = 1 - next_fade_amount;
+
 				
 				if (fuckit == 1) {
 					next_fade_amount = 0;
 				}
-			//}
+
 			
 			// oh knows this could cause us to fade a different amount on a non zero crossing
 			if (current_fade_amount[0][j] == 0) {
@@ -749,19 +638,6 @@ crossfade_chunk_s32(void *sample_buffer_from, void *sample_buffer_to, void *fade
 			}
 
 		}
-
-		/*	if (i*number_of_channels + j == 515)	{
-			printf("i: %d total frames: %d", i, total_frames);
-							next_fade_amount = ((float)i * 100.0)/(float)total_frames;
-				printf("fade percent %f", next_fade_amount);
-				next_fade_amount = next_fade_amount/100.0;
-				next_fade_amount = next_fade_amount * next_fade_amount;
-
-			}
-			if (i*number_of_channels + j == frames_in_chunk)	{
-				printf("Current Sample: %d current fade amount: %d result ::: %d :::: \n", samples[i*number_of_channels + j], current_fade_amount[j],  ((samples[i*number_of_channels + j] * current_fade_amount[j]) / 100));
-			}*/
-			//faded_samples[i*number_of_channels + j] = ((((samples_from[fadeoffset + i*number_of_channels + j] * current_fade_amount[0][j]) / 100) + ((samples_to[i*number_of_channels + j] * current_fade_amount[1][j]) / 100)) / 2);
 
 			faded_samples[i*number_of_channels + j] = ((((samples_from[sample_start_number + i*number_of_channels + j] * current_fade_amount[0][j]) ) + ((samples_to[i*number_of_channels + j] * current_fade_amount[1][j]) )) );
 
