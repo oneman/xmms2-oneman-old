@@ -2,7 +2,8 @@
 
 #include <math.h>
 #include "xmms/xmms_log.h"
-
+#include "xmmspriv/xmms_sample.h"
+#include "xmmspriv/xmms_streamtype.h"
 #include "xmmspriv/xmms_fade.h"
 
 
@@ -132,19 +133,23 @@ fade_chunk(void *sample_buffer, int sample_start_number, int samples_in_chunk, i
 	return 0;
 }
 
+
+
+/*
 int
 fade_chunk_s16(void *sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples, int in_or_out) {
+*/
+int
+fade_chunk_s16(void *sample_buffer, xmms_fader_t *fader, int framecount) {
 
 	/* ok lets handle that void * and hard code it to float for now, is it possible to cast without a new var?? */
 	
 	gint16 *samples = (gint16*)sample_buffer;
 
 	/* well as with the sample type we dont really want to hard code the number of channels */
-	int number_of_channels, frames_in_chunk, total_frames;
+	int number_of_channels;
 	number_of_channels = 2;
 	
-	frames_in_chunk = samples_in_chunk / number_of_channels;
-	total_frames = total_samples / number_of_channels;
 	
 
 	int i ,j;
@@ -161,23 +166,23 @@ fade_chunk_s16(void *sample_buffer, int sample_start_number, int samples_in_chun
 	int fuckit;
 	fuckit = 0;
 	
-	total_frames = total_frames / 2;
-	if(sample_start_number >= ((total_frames * 2)))
+
+	if(fader->current_frame_number >= ((fader->total_frames * 2)))
 		fuckit = 1;
 
-	for (i = 0; i < frames_in_chunk; i++) {
+	for (i = 0; i < framecount; i++) {
 		for (j = 0; j < number_of_channels; j++) {
 
 			/* 0 is fade out, 1 is fade in */
-			if(in_or_out) {	
-				next_fade_amount = ((float)(i + (sample_start_number / number_of_channels))* 100.0)/(float)total_frames;
+			if(fader->active - 1) {	
+				next_fade_amount = ((float)(i + (fader->current_frame_number))* 100.0)/(float)fader->total_frames;
 				next_fade_amount = next_fade_amount/10.0;
 				next_fade_amount = next_fade_amount * next_fade_amount;
 				if (fuckit == 1) {
 					next_fade_amount = 100;
 				}
 			} else {
-				next_fade_amount = ((float)(total_frames - (i + (sample_start_number / number_of_channels)))* 100.0)/(float)total_frames;
+				next_fade_amount = ((float)(fader->total_frames - (i + (fader->current_frame_number)))* 100.0)/(float)fader->total_frames;
 				next_fade_amount = next_fade_amount/10.0;
 				next_fade_amount = next_fade_amount * next_fade_amount;
 				if (fuckit == 1) {
@@ -304,6 +309,32 @@ fade_chunk_s32(void *sample_buffer, int sample_start_number, int samples_in_chun
 
 	return 0;
 }
+
+
+
+int fade_chunk_new(void *sample_buffer, xmms_fader_t *fader, xmms_stream_type_t *format, int framecount) {
+
+			/*if(xmms_stream_type_get_int(format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT)
+			{
+				fade_chunk(sample_buffer, fader, framecount);
+			}
+			
+			if(xmms_stream_type_get_int(format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S32)
+			{
+				fade_chunk_s32(sample_buffer, fader, framecount);
+			}*/
+		
+			if(xmms_stream_type_get_int(format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
+			{
+				fade_chunk_s16(sample_buffer, fader, framecount);
+				XMMS_DBG("fading s16 %d, %d", framecount, fader->current_frame_number);
+			}
+			
+			fader->current_frame_number += framecount;
+		return 0;
+}
+
+
 
 
 // float

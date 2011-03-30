@@ -112,14 +112,13 @@ XMMS_CMD_DEFINE (volume_get, xmms_playback_client_volume_get, xmms_output_t *, D
 struct xmms_output_St {
 	xmms_object_t object;
 
-	/* temp */
-	int fade;
-	int sample_start_number;
-	int total_samples;
-	int in_or_out;
+	xmms_fader_t fader;
+	
+	/* Crossfade */
 	guint8 fadebuffer[256 * 4096];
 	int crossfade;
 	int crossfade_total;
+	
 	xmms_output_plugin_t *plugin;
 	gpointer plugin_data;
 
@@ -128,8 +127,6 @@ struct xmms_output_St {
 	
 	xmms_medialib_entry_t current_entry;
 	guint toskip;
-	gint where_is_the_output_filler;
-	/* */
 
 	xmms_ringbuf_t *filler_messages;
 	gboolean tickled_when_paused;
@@ -758,17 +755,17 @@ void
 fade_complete(xmms_output_t *output)
 {
 
-	if (output->fade == 1) {
-		output->fade = 2;
+	if (output->fader.active == 1) {
+		output->fader.active = 2;
 		xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_PAUSE);
 	} else {
 
-		if (output->fade == 2) {
-			output->fade = 0;
+		if (output->fader.active == 2) {
+			output->fader.active = 0;
 		}
 	}
 	
-	output->sample_start_number = 0;
+	output->fader.current_frame_number = 0;
 
 }
 
@@ -865,7 +862,7 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 
 
 		/* if we are not fading and we have hung on for a while? ... */
-		if (!((output->fade == 1) && (output->sample_start_number >= output->total_samples))) {
+		if (!((output->fader.active > 0) && (output->fader.current_frame_number >= output->fader.total_frames))) {
 	
 			/* handle actual crossfade here */
 			if(output->crossfade > 0) {		
@@ -901,35 +898,22 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 	
 	
 	/* handle fading in and out */
-	if(output->fade) {
+	if(output->fader.active) {
 	
-		if (output->sample_start_number < output->total_samples) {
+		if (output->fader.current_frame_number < output->fader.total_frames) {
 		
-			if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT)
-			{
-				fade_chunk(buffer, output->sample_start_number, ret, output->total_samples, output->fade - 1);
-				output->sample_start_number += ret / 4;
-			}
+															// fixme
+			fade_chunk_new(buffer, &output->fader, output->format, ret / 4);
 			
-			if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S32)
-			{
-				fade_chunk_s32(buffer, output->sample_start_number, ret / 4, output->total_samples, output->fade - 1);
-				output->sample_start_number += ret / 4;
-			}
-		
-			if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
-			{
-				fade_chunk_s16(buffer, output->sample_start_number, ret / 2, output->total_samples, output->fade - 1);
-				output->sample_start_number += ret / 2;
-			}
 		
 		} else {
-			output->sample_start_number += len / 4;
-			if ((output->fade - 1) == 0) {
+			/* what this does is keep the output open and sends zeros to make sure the whole fade gets played */
+			output->fader.current_frame_number += len / 4;
+			if ((output->fader.active - 1) == 0) {
 				int x;
 				for(x = 0; x < ret; x++)
 					buffer[x] = 0;
-				if (output->sample_start_number >= (output->total_samples + 8192 * 12)) {
+				if (output->fader.current_frame_number >= (output->fader.total_frames + 8192 * 12)) {
 					fade_complete(output);
 				}
 			} else {
@@ -946,7 +930,7 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 	}
 
 	/* Only Update Playtime if we are not fading and we have hung on for a while? ... */
-	if (!((output->fade) && (output->sample_start_number >= output->total_samples)))
+	if (!((output->fader.active) && (output->fader.current_frame_number >= output->fader.total_frames)))
 		update_playtime (output, ret);
 
 	return ret;
@@ -1044,12 +1028,6 @@ xmms_playback_client_start (xmms_output_t *output, xmms_error_t *err)
 {
 	g_return_if_fail (output);
 
-	printf("Output Buffer State: %d Ringbuffer Info: Size: %d Free: %d Used: %d\n", 
-			output->where_is_the_output_filler,
-			xmms_ringbuf_size(output->filler_buffer), 
-			xmms_ringbuf_bytes_free(output->filler_buffer), 
-			xmms_ringbuf_bytes_used(output->filler_buffer));
-
 	output->tickled_when_paused = FALSE;
 	xmms_output_filler_message (output, RUN);
 	if (!xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_PLAY)) {
@@ -1065,7 +1043,7 @@ xmms_playback_client_stop (xmms_output_t *output, xmms_error_t *err)
 {
 	g_return_if_fail (output);
 	
-	output->fade = 0;
+	output->fader.active = 0;
 
 	xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_STOP);
 
@@ -1077,9 +1055,8 @@ xmms_playback_client_pause (xmms_output_t *output, xmms_error_t *err)
 {
 	g_return_if_fail (output);
 
-	output->fade = 1;
+	output->fader.active = 1;
 
-	//xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_PAUSE);
 }
 
 
@@ -1386,9 +1363,6 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->crossfade_total = 0;
 	output->chunksize = 4096;
 	output->tickled_when_paused = FALSE;
-	output->fade = 0;
-
-
 
 	output->new_internal_filler_state = NOOP;
 
@@ -1399,9 +1373,8 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->switchbuffer_seek = FALSE;
 	output->switchcount = 0;
 	
-	output->in_or_out = 1;
-	output->sample_start_number = 0;
-	output->total_samples = 8192 * 8;
+	
+	output->fader.total_frames = 25000;
 	
 	output->switchbuffer_seek = FALSE;
 	output->output_needs_to_switch_buffers = FALSE;
