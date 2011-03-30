@@ -831,115 +831,99 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 	g_return_val_if_fail (buffer, -1);
 
 
-
+	/* handle buffer switching here */
 	if(output->output_needs_to_switch_buffers == TRUE) {
 		output->crossfade = xmms_ringbuf_read (output->filler_buffer, output->fadebuffer, 64 * 4096);
-
-		
 		xmms_output_switchbuffers(output);
 		g_atomic_int_set(&output->output_needs_to_switch_buffers, 0);
-		
 		ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
 
+		/* handle crossfade setup here */
 		if(output->crossfade > 0) {		
-		
-		if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
-		{
-		output->crossfade = output->crossfade / 2;
-		output->crossfade_total = output->crossfade;
-			crossfade_chunk_s16(output->fadebuffer, buffer, buffer, 0, len / 2, output->crossfade_total);
-	output->crossfade = output->crossfade - len / 2;
-		}
-				if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S32)
-		{
-		output->crossfade = output->crossfade / 4;
-		output->crossfade_total = output->crossfade;
-				crossfade_chunk_s32(output->fadebuffer, buffer, buffer, 0, len / 4, output->crossfade_total);
-	output->crossfade = output->crossfade - len / 4;
-		}
-				if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT)
-		{
-		output->crossfade = output->crossfade / 4;
-		output->crossfade_total = output->crossfade;
-				crossfade_chunk(output->fadebuffer, buffer, buffer, 0, len / 4, output->crossfade_total);
-	output->crossfade = output->crossfade - len / 4;			
-		}
-	}
-		
-	} else {
 
-	if (!((output->fade == 1) && (output->sample_start_number >= output->total_samples))) {
-	
-		if(output->crossfade > 0) {		
-		
-			ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
-			
-
-
-
-			
-			
-					if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
-		{
-			crossfade_chunk_s16(&output->fadebuffer, buffer, buffer, output->crossfade_total - output->crossfade, len / 2, output->crossfade_total);
-	output->crossfade = output->crossfade - len / 2;
-		}
-				if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S32)
-		{
-			crossfade_chunk_s32(&output->fadebuffer, buffer, buffer, output->crossfade_total - output->crossfade, len / 4, output->crossfade_total);
-	output->crossfade = output->crossfade - len / 4;
-		}
-				if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT)
-		{
-		
-
-			crossfade_chunk(&output->fadebuffer, buffer, buffer, output->crossfade_total - output->crossfade, len / 4, output->crossfade_total);
-	output->crossfade = output->crossfade - len / 4;			
-		}
-			
-			
-			
-			if (output->crossfade < len / 8) {
-					output->crossfade = 0;
-					output->crossfade_total = 0;
+			if (xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
+			{
+				output->crossfade = output->crossfade / 2;
+				output->crossfade_total = output->crossfade;
 			}
 			
-		} else {
-			ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
+			if (xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S32)
+			{
+				output->crossfade = output->crossfade / 4;
+				output->crossfade_total = output->crossfade;
+			}
+			
+			if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT)
+			{
+				output->crossfade = output->crossfade / 4;
+				output->crossfade_total = output->crossfade;		
+			}
 		}
-
-		}
+		
 	}
 	
+
+
+		/* if we are not fading and we have hung on for a while? ... */
+		if (!((output->fade == 1) && (output->sample_start_number >= output->total_samples))) {
 	
+			/* handle actual crossfade here */
+			if(output->crossfade > 0) {		
+		
+				ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
+				if (xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
+				{
+					crossfade_chunk_s16(&output->fadebuffer, buffer, buffer, output->crossfade_total - output->crossfade, len / 2, output->crossfade_total);
+					output->crossfade = output->crossfade - len / 2;
+				}
+				if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S32)
+				{
+					crossfade_chunk_s32(&output->fadebuffer, buffer, buffer, output->crossfade_total - output->crossfade, len / 4, output->crossfade_total);
+					output->crossfade = output->crossfade - len / 4;
+				}
+				if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT)
+				{
+					crossfade_chunk(&output->fadebuffer, buffer, buffer, output->crossfade_total - output->crossfade, len / 4, output->crossfade_total);
+					output->crossfade = output->crossfade - len / 4;			
+				}
+			
+				if (output->crossfade < len / 8) {
+					output->crossfade = 0;
+					output->crossfade_total = 0;
+				}
+			
+			} else {
+				/* not crossfading, read normally */
+				ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
+			}
+
+		}
+	
+	
+	/* handle fading in and out */
 	if(output->fade) {
 	
-	if (output->sample_start_number < output->total_samples) {
-	
-		//XMMS_DBG ("Fade Chunk: SSN: %d LEN: %d TOTAL: %d INOROUT: %d", output->sample_start_number, ret / 2, output->total_samples, output->fade - 1);
+		if (output->sample_start_number < output->total_samples) {
 		
-		if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT)
-		{
-			//XMMS_DBG ("got float");
-			fade_chunk(buffer, output->sample_start_number, ret, output->total_samples, output->fade - 1);
-			output->sample_start_number += ret / 4;
-		}
+			if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT)
+			{
+				fade_chunk(buffer, output->sample_start_number, ret, output->total_samples, output->fade - 1);
+				output->sample_start_number += ret / 4;
+			}
+			
+			if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S32)
+			{
+				fade_chunk_s32(buffer, output->sample_start_number, ret / 4, output->total_samples, output->fade - 1);
+				output->sample_start_number += ret / 4;
+			}
 		
-		if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S32)
-		{
-			//XMMS_DBG ("got s32");
-			fade_chunk_s32(buffer, output->sample_start_number, ret / 4, output->total_samples, output->fade - 1);
-			output->sample_start_number += ret / 4;
-		}
-	
-		if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
-		{
-			//XMMS_DBG ("got s16");
-			fade_chunk_s16(buffer, output->sample_start_number, ret / 2, output->total_samples, output->fade - 1);
-			output->sample_start_number += ret / 2;
-		}
+			if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
+			{
+				fade_chunk_s16(buffer, output->sample_start_number, ret / 2, output->total_samples, output->fade - 1);
+				output->sample_start_number += ret / 2;
+			}
 		
-	} else {
+		} else {
 			output->sample_start_number += len / 4;
 			if ((output->fade - 1) == 0) {
 				int x;
@@ -961,6 +945,7 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 		return -1;
 	}
 
+	/* Only Update Playtime if we are not fading and we have hung on for a while? ... */
 	if (!((output->fade) && (output->sample_start_number >= output->total_samples)))
 		update_playtime (output, ret);
 
@@ -979,11 +964,6 @@ xmms_output_read_wait (xmms_output_t *output, char *buffer, gint len)
 guint
 xmms_output_bytes_available (xmms_output_t *output)
 {
-	//if (output->output_needs_to_switch_buffers == TRUE) {
-	//	xmms_output_switchbuffers(output);
-	//	g_atomic_int_set(&output->output_needs_to_switch_buffers, 0);
-	//}
-
 	return xmms_ringbuf_bytes_used(output->filler_buffer);
 }
 
