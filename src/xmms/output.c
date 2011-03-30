@@ -903,7 +903,7 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 		if (output->fader.current_frame_number < output->fader.total_frames) {
 		
 															// fixme
-			fade_chunk_new(buffer, &output->fader, output->format, ret / 4);
+			fade_chunk(buffer, &output->fader, output->format, ret);
 			
 		
 		} else {
@@ -913,7 +913,7 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 				int x;
 				for(x = 0; x < ret; x++)
 					buffer[x] = 0;
-				if (output->fader.current_frame_number >= (output->fader.total_frames + 8192 * 12)) {
+				if (output->fader.current_frame_number >= (output->fader.total_frames + 8192 * 48)) {
 					fade_complete(output);
 				}
 			} else {
