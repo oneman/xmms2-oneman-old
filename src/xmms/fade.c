@@ -24,7 +24,6 @@ fade_slice(xmms_fader_t *fader, void *buffer, int len) {
 	if ((frames + fader->current_frame_number) >= fader->total_frames) {
 		extra_frames = frames - (fader->total_frames - fader->current_frame_number);
 		frames = fader->total_frames - fader->current_frame_number;
-
 	}
 
 	samples_s16 = (gint16*)buffer;
@@ -91,16 +90,18 @@ fade_slice(xmms_fader_t *fader, void *buffer, int len) {
 			
 					if (sign[j] != finalsign[j]) {
 						fader->final_frame[j] = fader->current_frame_number + i + 1;
-						XMMS_DBG("final frame was %d for %d", fader->final_frame[j], j);
 						break;
 					}
+				}
+				if (fader->final_frame[j] == fader->total_frames) {
+					XMMS_DBG("No Zero Cross in channel %d final slice.. a tiny artifact may be heard..", j);
 				}
 			}
 		
 			if (fader->status == FADING_OUT) {
 		
 				for (j = 0; j < channels; j++) {
-					for (i = (fader->total_frames - fader->final_frame[j] - 1); i < frames + extra_frames; i++) {
+					for (i = (frames - (fader->total_frames - fader->final_frame[j]) - 1); i < frames + extra_frames; i++) {
 						samples_s16[i*channels + j] = 0;
 					}
 				}
@@ -111,7 +112,7 @@ fade_slice(xmms_fader_t *fader, void *buffer, int len) {
 		for (i = 0; i < frames; i++) {
 			for (j = 0; j < channels; j++) {
 				
-				if ((i + fader->current_frame_number + 1) < fader->final_frame[j]) {
+				if ((i + fader->current_frame_number + 1) <= fader->final_frame[j]) {
 				
 					if (samples_s16[i*channels + j] >= 0) {
 						sign[j] = 1;
@@ -134,7 +135,6 @@ fade_slice(xmms_fader_t *fader, void *buffer, int len) {
 					fader->lastsign[j] = sign[j];
 			
 				}
-
 			}
 		
 		}
@@ -178,16 +178,18 @@ fade_slice(xmms_fader_t *fader, void *buffer, int len) {
 			
 						if (sign[j] != finalsign[j]) {
 							fader->final_frame[j] = fader->current_frame_number + i + 1;
-							XMMS_DBG("final frame was %d for %d", fader->final_frame[j], j);
 							break;
 						}
+					}
+					if (fader->final_frame[j] == fader->total_frames) {
+						XMMS_DBG("No Zero Cross in channel %d final slice.. a tiny artifact may be heard..", j);
 					}
 				}
 		
 					if (fader->status == FADING_OUT) {
 			
 					for (j = 0; j < channels; j++) {
-						for (i = (fader->total_frames - fader->final_frame[j] - 1); i < frames + extra_frames; i++) {
+						for (i = (frames - (fader->total_frames - fader->final_frame[j]) - 1); i < frames + extra_frames; i++) {
 							samples_s32[i*channels + j] = 0;
 						}
 					}
@@ -197,7 +199,7 @@ fade_slice(xmms_fader_t *fader, void *buffer, int len) {
 			for (i = 0; i < frames; i++) {
 				for (j = 0; j < channels; j++) {
 	
-					if ((i + fader->current_frame_number + 1) < fader->final_frame[j]) {
+					if ((i + fader->current_frame_number + 1) <= fader->final_frame[j]) {
 	
 						if (samples_s32[i*channels + j] >= 0) {
 							sign[j] = 1;
@@ -261,16 +263,18 @@ fade_slice(xmms_fader_t *fader, void *buffer, int len) {
 			
 						if (sign[j] != finalsign[j]) {	
 							fader->final_frame[j] = fader->current_frame_number + i + 1;
-							XMMS_DBG("final frame was %d for %d", fader->final_frame[j], j);
 							break;
 						}
+					}
+					if (fader->final_frame[j] == fader->total_frames) {
+						XMMS_DBG("No Zero Cross in channel %d final slice.. a tiny artifact may be heard..", j);
 					}
 				}
 		
 				if (fader->status == FADING_OUT) {
 			
 					for (j = 0; j < channels; j++) {
-						for (i = (fader->total_frames - fader->final_frame[j] - 1); i < frames + extra_frames; i++) {
+						for (i = (frames - (fader->total_frames - fader->final_frame[j]) - 1); i < frames + extra_frames; i++) {
 							samples_float[i*channels + j] = 0;
 						}
 					}
@@ -280,7 +284,7 @@ fade_slice(xmms_fader_t *fader, void *buffer, int len) {
 			for (i = 0; i < frames; i++) {
 				for (j = 0; j < channels; j++) {
 				
-					if ((i + fader->current_frame_number + 1) < fader->final_frame[j]) {
+					if ((i + fader->current_frame_number + 1) <= fader->final_frame[j]) {
 	
 						if (samples_float[i*channels + j] >= 0) {	
 							sign[j] = 1;
