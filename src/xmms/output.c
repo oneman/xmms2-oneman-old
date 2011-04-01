@@ -854,6 +854,9 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 				output->crossfade = output->crossfade / 4;
 				output->crossfade_total = output->crossfade;		
 			}
+			
+			XMMS_DBG ("Got %d frames for crossfading", output->crossfade_total);
+			
 		}
 		
 	}
