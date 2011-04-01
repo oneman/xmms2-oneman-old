@@ -866,15 +866,15 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 
 	/* handle fading in and out */
 	if(output->fader.status) {
-		if (output->fader.current_frame_number > output->fader.total_frames) {
+		if (output->fader.current_frame_number >= output->fader.total_frames) {
 			if (output->fader.status == FADING_OUT) {
-				XMMS_DBG("Holding Output Open");
+				//XMMS_DBG("Holding Output Open");
 				ret = len;
 				int x;
 				for(x = 0; x < ret; x++)
 					buffer[x] = 0;
 				output->fader.current_frame_number += (ret / 4);
-				if (output->fader.current_frame_number > (output->fader.total_frames + 88200)) {
+				if (output->fader.current_frame_number > (output->fader.total_frames + 192000)) {
 					fade_complete(output);
 				}
 			} else {

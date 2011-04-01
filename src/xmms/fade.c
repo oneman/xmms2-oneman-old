@@ -6,59 +6,49 @@
 #include "xmmspriv/xmms_streamtype.h"
 #include "xmmspriv/xmms_fade.h"
 
-float next_fade_amount(xmms_fader_t *fader, int i ) {
 
-	float next_fade_amount;
-
-	if (fader->status == FADING_IN) {	
-		next_fade_amount = ((float)(i + (fader->current_frame_number))* 100.0)/(float)fader->total_frames;
-	} else {
-		next_fade_amount = ((float)(fader->total_frames - (i + (fader->current_frame_number)))* 100.0)/(float)fader->total_frames;
-	}
-	
-	if ((next_fade_amount < 0) || (next_fade_amount > 100)) {
-		if (next_fade_amount < 0) 
-			next_fade_amount = 0;
-		if (next_fade_amount > 100) 
-			next_fade_amount = 100;
-	}
-	
-	next_fade_amount = next_fade_amount/10.0;
-	next_fade_amount = next_fade_amount * next_fade_amount;
-	
-	
-
-	return next_fade_amount;
-
-}
 
 
 void
 fade_slice(xmms_fader_t *fader, void *buffer, int len) {
 
-	int frames, channels, i, j;
+	int frames, channels, i, j, extra_frames;
 	gint16 *samples_s16;
 	gint32 *samples_s32;
 	float *samples_float;
 	
 	frames = len / xmms_sample_frame_size_get(fader->format);
 
+	/* Fading in extra frames are ignored, Fading out they are zero'ed */
+	
+	if ((frames + fader->current_frame_number) >= fader->total_frames) {
+		extra_frames = frames - (fader->total_frames - fader->current_frame_number);
+		frames = fader->total_frames - fader->current_frame_number;
+
+	}
+
 	samples_s16 = (gint16*)buffer;
 	samples_s32 = (gint32*)buffer;
 	samples_float = (float*)buffer;
 
-	channels = xmms_stream_type_get_int(fader->format, XMMS_STREAM_TYPE_FMT_FORMAT);
+	channels = xmms_stream_type_get_int(fader->format, XMMS_STREAM_TYPE_FMT_CHANNELS);
 
 	int sign[channels];
+	int finalsign[channels];
 	
+	/* First Run Setup */
 	if (fader->current_frame_number == 0) {
 		for (j = 0; j < channels; j++) {
-			fader->current_fade_amount[j] = next_fade_amount(fader, 0);;
-			sign[j] = 0;
-			fader->lastsign[j] = 0;
+			if (fader->status == FADING_OUT) {
+				fader->current_fade_amount[j] = 1.0;
+			} else {
+				fader->current_fade_amount[j] = 0.0;
+			}
+			fader->final_frame[j] = fader->total_frames;
 		}
 	}
 	
+		
 	/*	The following is repeated in the way that it is for maximum performance, as it could 
 	 *	be called half a million times per second
 	 */
@@ -69,21 +59,81 @@ fade_slice(xmms_fader_t *fader, void *buffer, int len) {
 	
 		samples_s16 = (gint16*)buffer;
 
+		/* First Zero Finder */
+		if (fader->current_frame_number == 0) {
+			for (j = 0; j < channels; j++) {
+				if (samples_s16[0*channels + j] >= 0) {
+					fader->lastsign[j] = 1;
+				} else {
+					fader->lastsign[j] = 0;
+				}
+			}
+		}
+		
+		
+		/* Final Zero Finder */
+		if ((frames + fader->current_frame_number) >= fader->total_frames) {
+			for (j = 0; j < channels; j++) {
+				if (samples_s16[(frames - 1)*channels + j] >= 0) {
+					finalsign[j] = 1;
+				} else {
+					finalsign[j] = 0;
+				}
+			}
+			
+			for (j = 0; j < channels; j++) {
+				for (i = frames - 1; i > -1; i--) {	
+					if (samples_s16[i*channels + j] >= 0) {
+						sign[j] = 1;
+					} else {
+						sign[j] = 0;
+					}
+			
+					if (sign[j] != finalsign[j]) {
+						fader->final_frame[j] = fader->current_frame_number + i + 1;
+						XMMS_DBG("final frame was %d for %d", fader->final_frame[j], j);
+						break;
+					}
+				}
+			}
+		
+			if (fader->status == FADING_OUT) {
+		
+				for (j = 0; j < channels; j++) {
+					for (i = (fader->total_frames - fader->final_frame[j] - 1); i < frames + extra_frames; i++) {
+						samples_s16[i*channels + j] = 0;
+					}
+				}
+			}
+		}
+		
+
 		for (i = 0; i < frames; i++) {
 			for (j = 0; j < channels; j++) {
-	
-				if (samples_s16[i*channels + j] >= 0) {
-					sign[j] = 1;
-				} else {
-					sign[j] = 0;
-				}
+				
+				if ((i + fader->current_frame_number + 1) < fader->final_frame[j]) {
+				
+					if (samples_s16[i*channels + j] >= 0) {
+						sign[j] = 1;
+					} else {
+						sign[j] = 0;
+					}
 			
-				if (sign[j] != fader->lastsign[j]) {
-					fader->current_fade_amount[j] = next_fade_amount(fader, i);
-				}
+					if (sign[j] != fader->lastsign[j]) {
+				
+						if (fader->status == FADING_OUT) {	
+							fader->current_fade_amount[j] = ((fader->total_frames - (fader->current_frame_number + i)) * 100.0) / fader->total_frames;
+						} else {
+							fader->current_fade_amount[j] = ((fader->current_frame_number + i) * 100.0) / fader->total_frames;
+						}
+						fader->current_fade_amount[j] /= 100.0;
+						fader->current_fade_amount[j] *= fader->current_fade_amount[j];
+					}
 
-				samples_s16[i*channels + j] = ((samples_s16[i*channels + j] * fader->current_fade_amount[j]) / 100);
-				fader->lastsign[j] = sign[j];
+					samples_s16[i*channels + j] = samples_s16[i*channels + j] * fader->current_fade_amount[j];
+					fader->lastsign[j] = sign[j];
+			
+				}
 
 			}
 		
@@ -95,23 +145,81 @@ fade_slice(xmms_fader_t *fader, void *buffer, int len) {
 		{
 		
 			samples_s32 = (gint32*)buffer;
+			
+			/* First Zero Finder */
+			if (fader->current_frame_number == 0) {
+				for (j = 0; j < channels; j++) {
+					if (samples_s32[0*channels + j] >= 0) {
+						fader->lastsign[j] = 1;
+					} else {
+						fader->lastsign[j] = 0;
+					}
+				}
+			}
+		
+		
+			/* Final Zero Finder */
+			if ((frames + fader->current_frame_number) >= fader->total_frames) {
+				for (j = 0; j < channels; j++) {
+					if (samples_s32[(frames - 1)*channels + j] >= 0) {
+						finalsign[j] = 1;
+					} else {
+						finalsign[j] = 0;
+					}
+				}
+			
+				for (j = 0; j < channels; j++) {
+					for (i = frames - 1; i > -1; i--) {	
+						if (samples_s32[i*channels + j] >= 0) {
+							sign[j] = 1;
+						} else {
+							sign[j] = 0;
+						}
+			
+						if (sign[j] != finalsign[j]) {
+							fader->final_frame[j] = fader->current_frame_number + i + 1;
+							XMMS_DBG("final frame was %d for %d", fader->final_frame[j], j);
+							break;
+						}
+					}
+				}
+		
+					if (fader->status == FADING_OUT) {
+			
+					for (j = 0; j < channels; j++) {
+						for (i = (fader->total_frames - fader->final_frame[j] - 1); i < frames + extra_frames; i++) {
+							samples_s32[i*channels + j] = 0;
+						}
+					}
+				}
+			}
 
 			for (i = 0; i < frames; i++) {
 				for (j = 0; j < channels; j++) {
 	
-					if (samples_s32[i*channels + j] >= 0) {
-						sign[j] = 1;
-					} else {
-						sign[j] = 0;
-					}
+					if ((i + fader->current_frame_number + 1) < fader->final_frame[j]) {
+	
+						if (samples_s32[i*channels + j] >= 0) {
+							sign[j] = 1;
+						} else {
+							sign[j] = 0;
+						}
 			
-					if (sign[j] != fader->lastsign[j]) {
-						fader->current_fade_amount[j] = next_fade_amount(fader, i);
+						if (sign[j] != fader->lastsign[j]) {
+							if (fader->status == FADING_OUT) {	
+								fader->current_fade_amount[j] = ((fader->total_frames - (fader->current_frame_number + i)) * 100.0) / fader->total_frames;
+							} else {
+								fader->current_fade_amount[j] = ((fader->current_frame_number + i) * 100.0) / fader->total_frames;
+							}
+							fader->current_fade_amount[j] /= 100.0;
+							fader->current_fade_amount[j] *= fader->current_fade_amount[j];
+						}
+	
+						samples_s32[i*channels + j] = samples_s32[i*channels + j] * fader->current_fade_amount[j];
+						fader->lastsign[j] = sign[j];
+
 					}
-
-					samples_s32[i*channels + j] = ((samples_s32[i*channels + j] * fader->current_fade_amount[j]) / 100);
-					fader->lastsign[j] = sign[j];
-
+				
 				}
 		
 			}
@@ -120,25 +228,81 @@ fade_slice(xmms_fader_t *fader, void *buffer, int len) {
 		} else if (xmms_stream_type_get_int(fader->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT) {
 		
 			samples_float = (float*)buffer;
+			
+			/* First Zero Finder */
+			if (fader->current_frame_number == 0) {
+				for (j = 0; j < channels; j++) {
+					if (samples_float[0*channels + j] >= 0) {
+						fader->lastsign[j] = 1;
+					} else {
+						fader->lastsign[j] = 0;
+					}
+				}
+			}
+		
+		
+			/* Final Zero Finder */
+			if ((frames + fader->current_frame_number) >= fader->total_frames) {
+				for (j = 0; j < channels; j++) {
+					if (samples_float[(frames - 1)*channels + j] >= 0) {
+						finalsign[j] = 1;
+					} else {
+						finalsign[j] = 0;
+					}
+				}
+				
+				for (j = 0; j < channels; j++) {
+					for (i = frames - 1; i > -1; i--) {	
+						if (samples_float[i*channels + j] >= 0) {
+							sign[j] = 1;
+						} else {
+							sign[j] = 0;
+						}
+			
+						if (sign[j] != finalsign[j]) {	
+							fader->final_frame[j] = fader->current_frame_number + i + 1;
+							XMMS_DBG("final frame was %d for %d", fader->final_frame[j], j);
+							break;
+						}
+					}
+				}
+		
+				if (fader->status == FADING_OUT) {
+			
+					for (j = 0; j < channels; j++) {
+						for (i = (fader->total_frames - fader->final_frame[j] - 1); i < frames + extra_frames; i++) {
+							samples_float[i*channels + j] = 0;
+						}
+					}
+				}
+			}
 
 			for (i = 0; i < frames; i++) {
 				for (j = 0; j < channels; j++) {
+				
+					if ((i + fader->current_frame_number + 1) < fader->final_frame[j]) {
 	
-					if (samples_float[i*channels + j] >= 0) {
-						sign[j] = 1;
-					} else {
-						sign[j] = 0;
-					}
+						if (samples_float[i*channels + j] >= 0) {	
+							sign[j] = 1;
+						} else {
+							sign[j] = 0;
+						}
 			
-					if (sign[j] != fader->lastsign[j]) {
-						fader->current_fade_amount[j] = next_fade_amount(fader, i);
+						if (sign[j] != fader->lastsign[j]) {
+							if (fader->status == FADING_OUT) {	
+								fader->current_fade_amount[j] = ((fader->total_frames - (fader->current_frame_number + i)) * 100.0) / fader->total_frames;
+							} else {
+								fader->current_fade_amount[j] = ((fader->current_frame_number + i) * 100.0) / fader->total_frames;
+							}
+							fader->current_fade_amount[j] /= 100.0;
+							fader->current_fade_amount[j] *= fader->current_fade_amount[j];
+						}
+
+						samples_float[i*channels + j] = samples_float[i*channels + j] * fader->current_fade_amount[j];
+						fader->lastsign[j] = sign[j];
+
 					}
-
-					samples_float[i*channels + j] = ((samples_float[i*channels + j] * fader->current_fade_amount[j]) / 100);
-					fader->lastsign[j] = sign[j];
-
 				}
-		
 			}
 			
 		}

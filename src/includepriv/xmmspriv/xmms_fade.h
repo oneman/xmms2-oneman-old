@@ -24,12 +24,13 @@ typedef struct xmms_fader_St {
 	xmms_fader_status_t status;
 	int current_frame_number;
 	int total_frames;
-	int current_fade_amount[128];
+	int final_frame[128];
+	float current_fade_amount[128];
 	int lastsign[128];
 	xmms_stream_type_t *format;
 } xmms_fader_t;
 
-float next_fade_amount(xmms_fader_t *fader, int i );
+
 void fade_slice(xmms_fader_t *fader, void *buffer, int len);
 
 
