@@ -133,7 +133,7 @@ struct xmms_output_St {
 
 	xmms_ringbuf_t *filler_messages;
 	gboolean tickled_when_paused;
-	gint chunksize;
+	gint slice;
 
 	GThread *filler_thread;
 	GMutex *filler_mutex;
@@ -444,7 +444,7 @@ xmms_output_filler_wait_for_message_or_space(xmms_output_t *output) {
 			
 		} else {
 			free_bytes = xmms_ringbuf_bytes_free(output->filler_buffer);
-			if(free_bytes >= output->chunksize){
+			if(free_bytes >= output->slice){
 				output->filler_state = RUN;
 				return output->filler_state;
 			}
@@ -459,7 +459,7 @@ xmms_output_filler (void *arg)
 {
 	xmms_output_t *output = (xmms_output_t *)arg;
 	xmms_xform_t *chain = NULL;
-	char buf[output->chunksize];
+	char buf[output->slice];
 	xmms_error_t err;
 	gint ret;
 
@@ -901,17 +901,17 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 
 				if (xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
 				{
-					crossfade_chunk_s16(&output->fadebuffer, buffer, buffer, output->crossfade_total - output->crossfade, len / 2, output->crossfade_total);
+					crossfade_slice_s16(&output->fadebuffer, buffer, buffer, output->crossfade_total - output->crossfade, len / 2, output->crossfade_total);
 					output->crossfade = output->crossfade - len / 2;
 				}
 				if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S32)
 				{
-					crossfade_chunk_s32(&output->fadebuffer, buffer, buffer, output->crossfade_total - output->crossfade, len / 4, output->crossfade_total);
+					crossfade_slice_s32(&output->fadebuffer, buffer, buffer, output->crossfade_total - output->crossfade, len / 4, output->crossfade_total);
 					output->crossfade = output->crossfade - len / 4;
 				}
 				if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT)
 				{
-					crossfade_chunk(&output->fadebuffer, buffer, buffer, output->crossfade_total - output->crossfade, len / 4, output->crossfade_total);
+					crossfade_slice(&output->fadebuffer, buffer, buffer, output->crossfade_total - output->crossfade, len / 4, output->crossfade_total);
 					output->crossfade = output->crossfade - len / 4;			
 				}
 			
@@ -1359,7 +1359,7 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->filler_state = STOP;
 	output->crossfade = 0;
 	output->crossfade_total = 0;
-	output->chunksize = 4096;
+	output->slice = 4096;
 	output->tickled_when_paused = FALSE;
 
 	output->zero_frames = 56000;

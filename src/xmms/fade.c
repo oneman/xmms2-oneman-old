@@ -321,7 +321,7 @@ fade_slice(xmms_fader_t *fader, void *buffer, int len) {
 // Crossfade...
 
 int
-crossfade_chunk(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples) {
+crossfade_slice(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_slice, int total_samples) {
 
 	/* ok lets handle those void * and hard code it to float for now, is it possible to cast without a new var?? */
 	
@@ -330,10 +330,10 @@ crossfade_chunk(void *sample_buffer_from, void *sample_buffer_to, void *faded_sa
 	float *faded_samples = (float*)faded_sample_buffer;
 
 	/* well as with the sample type we dont really want to hard code the number of channels */
-	int number_of_channels, frames_in_chunk, total_frames;
+	int number_of_channels, frames_in_slice, total_frames;
 	number_of_channels = 2;
 	
-	frames_in_chunk = samples_in_chunk / number_of_channels;
+	frames_in_slice = samples_in_slice / number_of_channels;
 	total_frames = total_samples / number_of_channels;
 	
 
@@ -354,7 +354,7 @@ crossfade_chunk(void *sample_buffer_from, void *sample_buffer_to, void *faded_sa
 	fuckit = 0;
 	
 
-	for (i = 0; i < frames_in_chunk; i++) {
+	for (i = 0; i < frames_in_slice; i++) {
 		for (j = 0; j < number_of_channels; j++) {
 
 
@@ -435,7 +435,7 @@ crossfade_chunk(void *sample_buffer_from, void *sample_buffer_to, void *faded_sa
 
 
 int
-crossfade_chunk_s16(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples) {
+crossfade_slice_s16(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_slice, int total_samples) {
 
 	/* ok lets handle those void * and hard code it to float for now, is it possible to cast without a new var?? */
 	
@@ -444,10 +444,10 @@ crossfade_chunk_s16(void *sample_buffer_from, void *sample_buffer_to, void *fade
 	gint16 *faded_samples = (gint16*)faded_sample_buffer;
 
 	/* well as with the sample type we dont really want to hard code the number of channels */
-	int number_of_channels, frames_in_chunk, total_frames;
+	int number_of_channels, frames_in_slice, total_frames;
 	number_of_channels = 2;
 	
-	frames_in_chunk = samples_in_chunk / number_of_channels;
+	frames_in_slice = samples_in_slice / number_of_channels;
 	total_frames = total_samples / number_of_channels;
 	
 
@@ -468,7 +468,7 @@ crossfade_chunk_s16(void *sample_buffer_from, void *sample_buffer_to, void *fade
 	fuckit = 0;
 	
 
-	for (i = 0; i < frames_in_chunk; i++) {
+	for (i = 0; i < frames_in_slice; i++) {
 		for (j = 0; j < number_of_channels; j++) {
 
 
@@ -551,7 +551,7 @@ crossfade_chunk_s16(void *sample_buffer_from, void *sample_buffer_to, void *fade
 
 
 int
-crossfade_chunk_s32(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples) {
+crossfade_slice_s32(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_slice, int total_samples) {
 
 	/* ok lets handle those void * and hard code it to float for now, is it possible to cast without a new var?? */
 	
@@ -560,10 +560,10 @@ crossfade_chunk_s32(void *sample_buffer_from, void *sample_buffer_to, void *fade
 	gint *faded_samples = (gint*)faded_sample_buffer;
 
 	/* well as with the sample type we dont really want to hard code the number of channels */
-	int number_of_channels, frames_in_chunk, total_frames;
+	int number_of_channels, frames_in_slice, total_frames;
 	number_of_channels = 2;
 	
-	frames_in_chunk = samples_in_chunk / number_of_channels;
+	frames_in_slice = samples_in_slice / number_of_channels;
 	total_frames = total_samples / number_of_channels;
 	
 
@@ -583,7 +583,7 @@ crossfade_chunk_s32(void *sample_buffer_from, void *sample_buffer_to, void *fade
 	int fuckit;
 	fuckit = 0;
 	
-	for (i = 0; i < frames_in_chunk; i++) {
+	for (i = 0; i < frames_in_slice; i++) {
 		for (j = 0; j < number_of_channels; j++) {
 
 
