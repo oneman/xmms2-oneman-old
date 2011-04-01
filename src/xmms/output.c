@@ -114,6 +114,9 @@ struct xmms_output_St {
 
 	xmms_fader_t fader;
 	
+	int zero_frames;
+	int zero_frames_count;
+	
 	/* Crossfade */
 	guint8 fadebuffer[256 * 4096];
 	int crossfade;
@@ -862,19 +865,36 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 	}
 	
 	
+	if (output->zero_frames_count == 0) {
+		ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
+	}
 	
-	ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
-
-
-
-	/* handle fading in and out */
-	if(output->fader.status) {
+	
+	/* Write out zeros if we must */
+	if ((output->zero_frames) && (output->zero_frames_count > 0)){
+		if (output->zero_frames_count > 0) {
+			memset(buffer, 0, len);
+			ret = len;
+			output->zero_frames_count -= (len / xmms_sample_frame_size_get(output->format));
+		}
+		
+		if (output->zero_frames_count <= 0) {
+			output->zero_frames_count = 0;
+			fade_complete(output);
+		}
+		
+	} else if ((output->fader.status) && (output->zero_frames_count == 0)) {
 		output->fader.format = output->format;
 		fade_slice(&output->fader, buffer, ret);
 		if (output->fader.current_frame_number >= output->fader.total_frames) {
-			fade_complete(output);
+			if ((output->zero_frames) && (output->fader.status == FADING_OUT)){
+				output->zero_frames_count = output->zero_frames;
+			} else {
+				fade_complete(output);
+			}
 		}
 	}
+	
 	
 	/* handle actual crossfade here */
 	if(output->crossfade) {		
@@ -1011,7 +1031,6 @@ xmms_playback_client_start (xmms_output_t *output, xmms_error_t *err)
 	xmms_output_filler_message (output, RUN);
 	if (!xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_PLAY)) {
 		xmms_output_filler_message (output, STOP);
-		XMMS_DBG ("i friggin stopped playback");
 		xmms_error_set (err, XMMS_ERROR_GENERIC, "Could not start playback");
 	}
 
@@ -1342,6 +1361,10 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->crossfade_total = 0;
 	output->chunksize = 4096;
 	output->tickled_when_paused = FALSE;
+
+	output->zero_frames = 56000;
+	
+	output->zero_frames_count = 0;
 
 	output->new_internal_filler_state = NOOP;
 
