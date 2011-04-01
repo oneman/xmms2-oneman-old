@@ -10,198 +10,147 @@ float next_fade_amount(xmms_fader_t *fader, int i ) {
 
 	float next_fade_amount;
 
-	if (fader->active - 1) {	
+	if (fader->status == FADING_IN) {	
 		next_fade_amount = ((float)(i + (fader->current_frame_number))* 100.0)/(float)fader->total_frames;
-		next_fade_amount = next_fade_amount/10.0;
-		next_fade_amount = next_fade_amount * next_fade_amount;
-
 	} else {
 		next_fade_amount = ((float)(fader->total_frames - (i + (fader->current_frame_number)))* 100.0)/(float)fader->total_frames;
-		next_fade_amount = next_fade_amount/10.0;
-		next_fade_amount = next_fade_amount * next_fade_amount;
-
 	}
+	
+	if ((next_fade_amount < 0) || (next_fade_amount > 100)) {
+		if (next_fade_amount < 0) 
+			next_fade_amount = 0;
+		if (next_fade_amount > 100) 
+			next_fade_amount = 100;
+	}
+	
+	next_fade_amount = next_fade_amount/10.0;
+	next_fade_amount = next_fade_amount * next_fade_amount;
+	
+	
 
 	return next_fade_amount;
 
-} 
+}
 
-int fade_chunk(void *sample_buffer, xmms_fader_t *fader, xmms_stream_type_t *format, int bytes) {
 
-	int numframes = bytes / xmms_sample_frame_size_get(format);
+void
+fade_slice(xmms_fader_t *fader, void *buffer, int len) {
 
-	if (xmms_stream_type_get_int(format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT)
-	{                 
-		fade_chunk_float(sample_buffer, fader, numframes);
+	int frames, channels, i, j;
+	gint16 *samples_s16;
+	gint32 *samples_s32;
+	float *samples_float;
+	
+	frames = len / xmms_sample_frame_size_get(fader->format);
+
+	samples_s16 = (gint16*)buffer;
+	samples_s32 = (gint32*)buffer;
+	samples_float = (float*)buffer;
+
+	channels = xmms_stream_type_get_int(fader->format, XMMS_STREAM_TYPE_FMT_FORMAT);
+
+	int sign[channels];
+	
+	if (fader->current_frame_number == 0) {
+		for (j = 0; j < channels; j++) {
+			fader->current_fade_amount[j] = next_fade_amount(fader, 0);;
+			sign[j] = 0;
+			fader->lastsign[j] = 0;
+		}
 	}
-			
-	if (xmms_stream_type_get_int(format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S32)
-	{                       
-		fade_chunk_s32(sample_buffer, fader, numframes);
-	}
-		
-	if (xmms_stream_type_get_int(format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
+	
+	/*	The following is repeated in the way that it is for maximum performance, as it could 
+	 *	be called half a million times per second
+	 */
+
+
+	if (xmms_stream_type_get_int(fader->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
 	{
-		fade_chunk_s16(sample_buffer, fader, numframes);
-	}
-			
-	fader->current_frame_number += numframes;
-
-	return 0;
-}
-
-
-int
-fade_chunk_float(void *sample_buffer, xmms_fader_t *fader, int framecount) {
-
-	/* ok lets handle that void * and hard code it to float for now, is it possible to cast without a new var?? */
 	
-	float *samples = (float*)sample_buffer;
+		samples_s16 = (gint16*)buffer;
 
-	/* well as with the sample type we dont really want to hard code the number of channels */
-	int number_of_channels;
-	number_of_channels = 2;
-
-	int i ,j;
-	int sign[number_of_channels];
+		for (i = 0; i < frames; i++) {
+			for (j = 0; j < channels; j++) {
 	
-	if (fader->current_frame_number == 0) {
-		for (j = 0; j < number_of_channels; j++) {
-			fader->current_fade_amount[j] = next_fade_amount(fader, 0);;
-			sign[j] = 0;
-			fader->lastsign[j] = 0;
-		}
-	}
-
-
-	for (i = 0; i < framecount; i++) {
-		for (j = 0; j < number_of_channels; j++) {
-
+				if (samples_s16[i*channels + j] >= 0) {
+					sign[j] = 1;
+				} else {
+					sign[j] = 0;
+				}
 			
-			if (samples[i*number_of_channels + j] >= 0) {
-				sign[j] = 1;
-			} else {
-				sign[j] = 0;
+				if (sign[j] != fader->lastsign[j]) {
+					fader->current_fade_amount[j] = next_fade_amount(fader, i);
+				}
+
+				samples_s16[i*channels + j] = ((samples_s16[i*channels + j] * fader->current_fade_amount[j]) / 100);
+				fader->lastsign[j] = sign[j];
+
 			}
-			
-			if (sign[j] != fader->lastsign[j]) {
-				fader->current_fade_amount[j] = next_fade_amount(fader, i);
-			}
-
-			samples[i*number_of_channels + j] = ((samples[i*number_of_channels + j] * fader->current_fade_amount[j]) / 100);
-
-			fader->lastsign[j] = sign[j];
-
-		}
 		
-	}
-
-	return 0;
-}
-
-int
-fade_chunk_s32(void *sample_buffer, xmms_fader_t *fader, int framecount) {
-
-	/* ok lets handle that void * and hard code it to float for now, is it possible to cast without a new var?? */
-	
-	gint32 *samples = (gint32*)sample_buffer;
-
-	/* well as with the sample type we dont really want to hard code the number of channels */
-	int number_of_channels;
-	number_of_channels = 2;
-
-	int i ,j;
-	int sign[number_of_channels];
-	
-	if (fader->current_frame_number == 0) {
-		for (j = 0; j < number_of_channels; j++) {
-			fader->current_fade_amount[j] = next_fade_amount(fader, 0);;
-			sign[j] = 0;
-			fader->lastsign[j] = 0;
 		}
-	}
-
-
-	for (i = 0; i < framecount; i++) {
-		for (j = 0; j < number_of_channels; j++) {
-
-			
-			if (samples[i*number_of_channels + j] >= 0) {
-				sign[j] = 1;
-			} else {
-				sign[j] = 0;
-			}
-			
-			if (sign[j] != fader->lastsign[j]) {
-				fader->current_fade_amount[j] = next_fade_amount(fader, i);
-			}
-
-			//samples[i*number_of_channels + j] = ((samples[i*number_of_channels + j] * fader->current_fade_amount[j]) / 100);
-			samples[i*number_of_channels + j] = (gint32)(((gint64)samples[i*number_of_channels + j] * fader->current_fade_amount[j]) / (gint64)100);
-
-			fader->lastsign[j] = sign[j];
-
-		}
+	
+	} else {
+	
+		if (xmms_stream_type_get_int(fader->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S32)
+		{
 		
-	}
+			samples_s32 = (gint32*)buffer;
 
-	return 0;
-}
-
-
-int
-fade_chunk_s16(void *sample_buffer, xmms_fader_t *fader, int framecount) {
-
-	/* ok lets handle that void * and hard code it to float for now, is it possible to cast without a new var?? */
+			for (i = 0; i < frames; i++) {
+				for (j = 0; j < channels; j++) {
 	
-	gint16 *samples = (gint16*)sample_buffer;
-
-	/* well as with the sample type we dont really want to hard code the number of channels */
-	int number_of_channels;
-	number_of_channels = 2;
-
-	int i ,j;
-	int sign[number_of_channels];
-	
-	if (fader->current_frame_number == 0) {
-		for (j = 0; j < number_of_channels; j++) {
-			fader->current_fade_amount[j] = next_fade_amount(fader, 0);;
-			sign[j] = 0;
-			fader->lastsign[j] = 0;
-		}
-	}
-
-
-	for (i = 0; i < framecount; i++) {
-		for (j = 0; j < number_of_channels; j++) {
-
+					if (samples_s32[i*channels + j] >= 0) {
+						sign[j] = 1;
+					} else {
+						sign[j] = 0;
+					}
 			
-			if (samples[i*number_of_channels + j] >= 0) {
-				sign[j] = 1;
-			} else {
-				sign[j] = 0;
-			}
-			
-			if (sign[j] != fader->lastsign[j]) {
-				fader->current_fade_amount[j] = next_fade_amount(fader, i);
-			}
+					if (sign[j] != fader->lastsign[j]) {
+						fader->current_fade_amount[j] = next_fade_amount(fader, i);
+					}
 
-			samples[i*number_of_channels + j] = ((samples[i*number_of_channels + j] * fader->current_fade_amount[j]) / 100);
+					samples_s32[i*channels + j] = ((samples_s32[i*channels + j] * fader->current_fade_amount[j]) / 100);
+					fader->lastsign[j] = sign[j];
 
-			fader->lastsign[j] = sign[j];
-
-		}
+				}
 		
-	}
+			}
+	
+	
+		} else if (xmms_stream_type_get_int(fader->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT) {
+		
+			samples_float = (float*)buffer;
 
-	return 0;
+			for (i = 0; i < frames; i++) {
+				for (j = 0; j < channels; j++) {
+	
+					if (samples_float[i*channels + j] >= 0) {
+						sign[j] = 1;
+					} else {
+						sign[j] = 0;
+					}
+			
+					if (sign[j] != fader->lastsign[j]) {
+						fader->current_fade_amount[j] = next_fade_amount(fader, i);
+					}
+
+					samples_float[i*channels + j] = ((samples_float[i*channels + j] * fader->current_fade_amount[j]) / 100);
+					fader->lastsign[j] = sign[j];
+
+				}
+		
+			}
+			
+		}
+	}
+	
+	fader->current_frame_number += frames;
+
 }
 
 
 
-
-
-// float
+// Crossfade...
 
 int
 crossfade_chunk(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples) {

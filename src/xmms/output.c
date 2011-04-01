@@ -755,13 +755,13 @@ void
 fade_complete(xmms_output_t *output)
 {
 
-	if (output->fader.active == 1) {
-		output->fader.active = 2;
+	if (output->fader.status == 1) {
+		output->fader.status = 2;
 		xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_PAUSE);
 	} else {
 
-		if (output->fader.active == 2) {
-			output->fader.active = 0;
+		if (output->fader.status == 2) {
+			output->fader.status = 0;
 		}
 	}
 	
@@ -833,7 +833,6 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 		output->crossfade = xmms_ringbuf_read (output->filler_buffer, output->fadebuffer, 64 * 4096);
 		xmms_output_switchbuffers(output);
 		g_atomic_int_set(&output->output_needs_to_switch_buffers, 0);
-		ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
 
 		/* handle crossfade setup here */
 		if(output->crossfade > 0) {		
@@ -859,15 +858,39 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 		
 	}
 	
-
-
-		/* if we are not fading and we have hung on for a while? ... */
-		if (!((output->fader.active > 0) && (output->fader.current_frame_number >= output->fader.total_frames))) {
 	
-			/* handle actual crossfade here */
-			if(output->crossfade > 0) {		
-		
-				ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
+	
+	ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
+
+
+
+	/* handle fading in and out */
+	if(output->fader.status) {
+		if (output->fader.current_frame_number > output->fader.total_frames) {
+			if (output->fader.status == FADING_OUT) {
+				XMMS_DBG("Holding Output Open");
+				ret = len;
+				int x;
+				for(x = 0; x < ret; x++)
+					buffer[x] = 0;
+				output->fader.current_frame_number += (ret / 4);
+				if (output->fader.current_frame_number > (output->fader.total_frames + 88200)) {
+					fade_complete(output);
+				}
+			} else {
+				fade_complete(output);
+			}
+		} else {
+			output->fader.format = output->format;
+			fade_slice(&output->fader, buffer, ret);
+		}
+	}
+
+
+	
+	/* handle actual crossfade here */
+	if(output->crossfade) {		
+
 				if (xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
 				{
 					crossfade_chunk_s16(&output->fadebuffer, buffer, buffer, output->crossfade_total - output->crossfade, len / 2, output->crossfade_total);
@@ -889,39 +912,7 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 					output->crossfade_total = 0;
 				}
 			
-			} else {
-				/* not crossfading, read normally */
-				ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
-			}
-
-		}
-	
-	
-	/* handle fading in and out */
-	if(output->fader.active) {
-	
-		if (output->fader.current_frame_number < output->fader.total_frames) {
-		
-															// fixme
-			fade_chunk(buffer, &output->fader, output->format, ret);
-			
-		
-		} else {
-			/* what this does is keep the output open and sends zeros to make sure the whole fade gets played */
-			output->fader.current_frame_number += len / 4;
-			if ((output->fader.active - 1) == 0) {
-				int x;
-				for(x = 0; x < ret; x++)
-					buffer[x] = 0;
-				if (output->fader.current_frame_number >= (output->fader.total_frames + 8192 * 48)) {
-					fade_complete(output);
-				}
-			} else {
-				fade_complete(output);
-			}
-		}
 	}
-	
 	
 	if (ret == 0 && xmms_ringbuf_iseos (output->filler_buffer)) {
 		xmms_output_filler_message (output, STOP);
@@ -929,8 +920,8 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 		return -1;
 	}
 
-	/* Only Update Playtime if we are not fading and we have hung on for a while? ... */
-	if (!((output->fader.active) && (output->fader.current_frame_number >= output->fader.total_frames)))
+	/* Only Update Playtime if we are not fading... */
+	if (!(output->fader.status))
 		update_playtime (output, ret);
 
 	return ret;
@@ -1043,7 +1034,7 @@ xmms_playback_client_stop (xmms_output_t *output, xmms_error_t *err)
 {
 	g_return_if_fail (output);
 	
-	output->fader.active = 0;
+	output->fader.status = INACTIVE;
 
 	xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_STOP);
 
@@ -1055,7 +1046,7 @@ xmms_playback_client_pause (xmms_output_t *output, xmms_error_t *err)
 {
 	g_return_if_fail (output);
 
-	output->fader.active = 1;
+	output->fader.status = FADING_OUT;
 
 }
 
