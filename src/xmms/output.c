@@ -1066,6 +1066,7 @@ xmms_playback_client_start (xmms_output_t *output, xmms_error_t *err)
 {
 	g_return_if_fail (output);
 
+	output->transition = TRUE;
 	output->tickled_when_paused = FALSE;
 	xmms_output_filler_message (output, RUN);
 	if (!xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_PLAY)) {
