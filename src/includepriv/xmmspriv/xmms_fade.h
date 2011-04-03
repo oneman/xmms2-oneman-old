@@ -33,10 +33,10 @@ typedef struct xmms_fader_St {
 
 void fade_slice(xmms_fader_t *fader, void *buffer, int len);
 
-
-
-
 int crossfade_slice(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples);
+
+
+int crossfade_slice_float(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples);
 int crossfade_slice_s16(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples);
 int crossfade_slice_s32(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples);
 

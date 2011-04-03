@@ -321,7 +321,7 @@ fade_slice(xmms_fader_t *fader, void *buffer, int len) {
 // Crossfade...
 
 int
-crossfade_slice(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_slice, int total_samples) {
+crossfade_slice_float(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_slice, int total_samples) {
 
 	/* ok lets handle those void * and hard code it to float for now, is it possible to cast without a new var?? */
 	

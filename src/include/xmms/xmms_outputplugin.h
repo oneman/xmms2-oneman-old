@@ -318,9 +318,6 @@ void xmms_output_stream_type_add (xmms_output_t *output, ...);
  */
 gint xmms_output_read (xmms_output_t *output, char *buffer, gint len);
 
-void *xmms_output_get_inactive_buffer (xmms_output_t *output);
-void xmms_output_switchbuffers(xmms_output_t *output);
-
 void xmms_output_get_vectors(xmms_output_t *output, xmms_output_vector_t *vectors);
 
 void xmms_output_advance(xmms_output_t *output, gint cnt);

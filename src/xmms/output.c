@@ -75,6 +75,11 @@ static GTree *xmms_playback_client_volume_get (xmms_output_t *output, xmms_error
 static void xmms_output_filler_message (xmms_output_t *output, xmms_output_filler_message_t message);
 static void fade_complete (xmms_output_t *output);
 
+gint xmms_transition_read (xmms_output_t *output, char *buffer, gint len);
+gint xmms_output_zero (xmms_output_t *output, char *buffer, gint len);
+void *xmms_output_get_inactive_buffer (xmms_output_t *output);
+void xmms_output_buffer_swap(xmms_output_t *output);
+
 static void xmms_volume_map_init (xmms_volume_map_t *vl);
 static void xmms_volume_map_free (xmms_volume_map_t *vl);
 static void xmms_volume_map_copy (xmms_volume_map_t *src, xmms_volume_map_t *dst);
@@ -122,6 +127,8 @@ struct xmms_output_St {
 	int crossfade;
 	int crossfade_total;
 	
+	gboolean transition;
+	
 	xmms_output_plugin_t *plugin;
 	gpointer plugin_data;
 
@@ -147,7 +154,7 @@ struct xmms_output_St {
 	xmms_ringbuf_t *filler_bufferB;
 	xmms_ringbuf_t *inactive_filler_buffer;
 	gboolean switchbuffer_seek;
-	int output_needs_to_switch_buffers;
+	int swap_buffers;
 	gint switchcount;
 
 	guint32 filler_seek;
@@ -702,10 +709,11 @@ xmms_output_filler (void *arg)
 					} else {
 						output->switchcount = 0;
 						output->switchbuffer_seek = FALSE;
-						output->output_needs_to_switch_buffers = TRUE;
+						output->swap_buffers = TRUE;
+						output->transition = TRUE;
 						xmms_ringbuf_set_eos(output->filler_buffer, TRUE);
 						XMMS_DBG ("Switching buffers! ");
-						while(g_atomic_int_get(&output->output_needs_to_switch_buffers) == TRUE) {
+						while(g_atomic_int_get(&output->swap_buffers) == TRUE) {
 							g_usleep(12000);
 						}
 					}
@@ -738,8 +746,39 @@ xmms_output_filler (void *arg)
 }
 
 void
-xmms_output_switchbuffers(xmms_output_t *output)
+xmms_output_buffer_swap(xmms_output_t *output)
 {
+
+	// crossfade if yes no ringbuf eh way
+
+	output->crossfade = xmms_ringbuf_read (output->filler_buffer, output->fadebuffer, 64 * 4096);
+
+
+		/* handle crossfade setup here */
+		if(output->crossfade > 0) {		
+
+			if (xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
+			{
+				output->crossfade = output->crossfade / 2;
+				output->crossfade_total = output->crossfade;
+			}
+			
+			if (xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S32)
+			{
+				output->crossfade = output->crossfade / 4;
+				output->crossfade_total = output->crossfade;
+			}
+			
+			if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT)
+			{
+				output->crossfade = output->crossfade / 4;
+				output->crossfade_total = output->crossfade;		
+			}
+			
+			XMMS_DBG ("Got %d frames for crossfading", output->crossfade_total);
+			
+		}
+
 
 	if(output->filler_buffer == output->filler_bufferA) {
 		output->filler_buffer = output->filler_bufferB;
@@ -750,6 +789,8 @@ xmms_output_switchbuffers(xmms_output_t *output)
 		xmms_ringbuf_clear (output->filler_bufferB);
 		xmms_ringbuf_set_eos(output->filler_bufferB, FALSE);
 	}
+	
+	g_atomic_int_set(&output->swap_buffers, 0);
 
 }
 
@@ -769,7 +810,7 @@ fade_complete(xmms_output_t *output)
 	}
 	
 	output->fader.current_frame_number = 0;
-
+	output->transition = FALSE;
 }
 
 void *
@@ -817,60 +858,12 @@ xmms_output_hit_hotspot(xmms_output_t *output)
 	xmms_ringbuf_hit_hotspot (output->filler_buffer);
 }
 
-
-
 gint
-xmms_output_read (xmms_output_t *output, char *buffer, gint len)
+xmms_output_zero (xmms_output_t *output, char *buffer, gint len)
 {
+
 	gint ret;
-	xmms_error_t err;
 
-	xmms_error_reset (&err);
-
-	g_return_val_if_fail (output, -1);
-	g_return_val_if_fail (buffer, -1);
-
-
-	/* handle buffer switching here */
-	if(output->output_needs_to_switch_buffers == TRUE) {
-		output->crossfade = xmms_ringbuf_read (output->filler_buffer, output->fadebuffer, 64 * 4096);
-		xmms_output_switchbuffers(output);
-		g_atomic_int_set(&output->output_needs_to_switch_buffers, 0);
-
-		/* handle crossfade setup here */
-		if(output->crossfade > 0) {		
-
-			if (xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
-			{
-				output->crossfade = output->crossfade / 2;
-				output->crossfade_total = output->crossfade;
-			}
-			
-			if (xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S32)
-			{
-				output->crossfade = output->crossfade / 4;
-				output->crossfade_total = output->crossfade;
-			}
-			
-			if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT)
-			{
-				output->crossfade = output->crossfade / 4;
-				output->crossfade_total = output->crossfade;		
-			}
-			
-			XMMS_DBG ("Got %d frames for crossfading", output->crossfade_total);
-			
-		}
-		
-	}
-	
-	
-	if (output->zero_frames_count == 0) {
-		ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
-	}
-	
-	
-	/* Write out zeros if we must */
 	if ((output->zero_frames) && (output->zero_frames_count > 0)){
 		if (output->zero_frames_count > 0) {
 			memset(buffer, 0, len);
@@ -883,7 +876,34 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 			fade_complete(output);
 		}
 		
-	} else if ((output->fader.status) && (output->zero_frames_count == 0)) {
+	}
+		
+	return ret;
+
+
+}
+
+gint
+xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
+{
+	gint ret;
+
+	g_return_val_if_fail (output, -1);
+	g_return_val_if_fail (buffer, -1);
+
+
+	if (output->zero_frames_count > 0) {
+		return xmms_output_zero (output, buffer, len);
+	}
+
+
+	if (output->swap_buffers) {
+		xmms_output_buffer_swap(output);
+	}
+	
+	ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
+				
+	if (output->fader.status) {
 		output->fader.format = output->format;
 		fade_slice(&output->fader, buffer, ret);
 		if (output->fader.current_frame_number >= output->fader.total_frames) {
@@ -895,8 +915,6 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 		}
 	}
 	
-	
-	/* handle actual crossfade here */
 	if(output->crossfade) {		
 
 				if (xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
@@ -911,15 +929,37 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 				}
 				if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT)
 				{
-					crossfade_slice(&output->fadebuffer, buffer, buffer, output->crossfade_total - output->crossfade, len / 4, output->crossfade_total);
+					crossfade_slice_float(&output->fadebuffer, buffer, buffer, output->crossfade_total - output->crossfade, len / 4, output->crossfade_total);
 					output->crossfade = output->crossfade - len / 4;			
 				}
-			
+
 				if (output->crossfade < len / 8) {
 					output->crossfade = 0;
 					output->crossfade_total = 0;
+					output->transition = FALSE;
 				}
-			
+
+	}
+
+	return ret;
+}
+
+
+gint
+xmms_output_read (xmms_output_t *output, char *buffer, gint len)
+{
+	gint ret;
+	xmms_error_t err;
+
+	xmms_error_reset (&err);
+
+	g_return_val_if_fail (output, -1);
+	g_return_val_if_fail (buffer, -1);
+
+	if (output->transition) {
+		ret = xmms_transition_read (output, buffer, len);
+	} else {
+		ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
 	}
 	
 	if (ret == 0 && xmms_ringbuf_iseos (output->filler_buffer)) {
@@ -928,9 +968,8 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 		return -1;
 	}
 
-	/* Only Update Playtime if we are not fading... */
-	if (!(output->fader.status))
-		update_playtime (output, ret);
+
+	update_playtime (output, ret);
 
 	return ret;
 }
@@ -1054,6 +1093,7 @@ xmms_playback_client_pause (xmms_output_t *output, xmms_error_t *err)
 	g_return_if_fail (output);
 
 	output->fader.status = FADING_OUT;
+	output->transition = TRUE;
 
 }
 
@@ -1361,6 +1401,8 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->crossfade_total = 0;
 	output->slice = 4096;
 	output->tickled_when_paused = FALSE;
+	
+	output->transition = FALSE;
 
 	output->zero_frames = 56000;
 	
@@ -1379,7 +1421,7 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->fader.total_frames = 25000;
 	
 	output->switchbuffer_seek = FALSE;
-	output->output_needs_to_switch_buffers = FALSE;
+	output->swap_buffers = FALSE;
 
 	output->filler_thread = g_thread_create (xmms_output_filler, output, TRUE, NULL);
 
