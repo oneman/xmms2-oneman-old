@@ -28,7 +28,28 @@ typedef struct xmms_fader_St {
 	float current_fade_amount[128];
 	int lastsign[128];
 	xmms_stream_type_t *format;
+	int callback;
 } xmms_fader_t;
+
+
+typedef struct xmms_playback_transition_St {
+	xmms_fader_status_t status;
+	int current_frame_number;
+	int total_frames;
+	xmms_stream_type_t *format;
+} xmms_playback_transition_t;
+
+
+typedef enum xmms_transition_state_E {
+	NONE,
+	PAUSING,
+	RESUMING,
+	STARTING,
+	STOPPING,
+	SEEKING,
+	ADVANCING,
+	JUMPING,
+} xmms_transition_state_t;
 
 
 void fade_slice(xmms_fader_t *fader, void *buffer, int len);
