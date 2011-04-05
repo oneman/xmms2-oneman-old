@@ -1197,9 +1197,9 @@ xmms_output_transition_set (xmms_output_t *output, xmms_transition_state_t trans
 		return FALSE;
 	}
 
-	int dostart;
+	int dostart, dostop;
 	dostart = 0;
-
+	dostop = 0;
 
 	g_mutex_lock (output->status_mutex);
 
@@ -1249,7 +1249,7 @@ xmms_output_transition_set (xmms_output_t *output, xmms_transition_state_t trans
 	xmms_output_filler_message (output, RUN);
 
 	dostart = 1;
-		
+
 	
 		}
 		
@@ -1346,11 +1346,7 @@ xmms_output_transition_set (xmms_output_t *output, xmms_transition_state_t trans
 		
 		
 		if (output->status == XMMS_PLAYBACK_STATUS_PAUSE) {
-
-		// smarter
-
-		//	stop output filler
-		//	set status to stopped
+				dostop = 1;
 		}
 	
 	}
@@ -1366,8 +1362,15 @@ xmms_output_transition_set (xmms_output_t *output, xmms_transition_state_t trans
 		xmms_output_filler_message (output, STOP);
 		xmms_error_set (err, XMMS_ERROR_GENERIC, "Could not start playback");
 	}
-	
 	}
+	
+	if (dostop == 1) {
+	
+				xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_STOP);
+				xmms_output_filler_message (output, STOP);
+	}
+	
+	
 
 
 	return ret;
