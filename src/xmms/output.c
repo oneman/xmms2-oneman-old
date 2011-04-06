@@ -35,8 +35,10 @@
 #include "xmms/xmms_ipc.h"
 #include "xmms/xmms_object.h"
 #include "xmms/xmms_config.h"
-
+#include "xmmspriv/xmms_roll.h"
 #include "xmmspriv/xmms_fade.h"
+
+#include <samplerate.h>
 
 #define VOLUME_MAX_CHANNELS 128
 
@@ -126,6 +128,8 @@ struct xmms_output_St {
 	xmms_playback_transition_t playback_transition;
 	xmms_ringbuf_t *playback_messages;
 	xmms_transition_state_t playback_transition_state;
+	
+	xmms_roll_data_t *rolldata;
 	
 	int zero_frames;
 	int zero_frames_count;
@@ -950,11 +954,20 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 	
 	
 	
-	ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
+	//ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
+				
 				
 	if (output->fader.status) {
 		output->fader.format = output->format;
-		fade_slice(&output->fader, buffer, ret);
+		//fade_slice(&output->fader, buffer, ret);
+		ret = 0;
+		while (ret != len )
+			ret += xmms_roll_read (output->rolldata, output->filler_buffer, buffer + ret, len - ret, ((float)output->fader.total_frames / 1200 )/ (float)output->fader.current_frame_number / 500);			
+
+			output->fader.current_frame_number = output->fader.current_frame_number + len /8;
+			XMMS_DBG ("Got %d of len %d", ret, len );
+		
+		
 		if (output->fader.current_frame_number >= output->fader.total_frames) {
 			if ((output->zero_frames) && (output->fader.status == FADING_OUT)){
 				output->zero_frames_count = output->zero_frames;
@@ -1592,6 +1605,10 @@ xmms_output_destroy (xmms_object_t *object)
 	g_mutex_unlock (output->read_mutex);
 	g_mutex_free (output->read_mutex);
 
+
+	xmms_roll_destroy(output->rolldata);
+
+
 	XMMS_DBG ("Freeing Ring Buffers");
 	xmms_ringbuf_destroy (output->filler_bufferA);
 	xmms_ringbuf_destroy (output->filler_bufferB);
@@ -1691,6 +1708,8 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 
 	output->new_internal_filler_state = NOOP;
 
+	output->rolldata = xmms_roll_init(output->rolldata);
+
 	output->playback_messages = xmms_ringbuf_new (size);
 
 	output->filler_bufferA = xmms_ringbuf_new (size);
@@ -1701,7 +1720,7 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->switchcount = 0;
 	
 	
-	output->fader.total_frames = 25000;
+	output->fader.total_frames = 100000;
 	
 	output->switchbuffer_seek = FALSE;
 	output->swap_buffers = FALSE;
