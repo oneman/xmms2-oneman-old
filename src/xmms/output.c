@@ -131,6 +131,8 @@ struct xmms_output_St {
 	
 	xmms_roll_data_t *rolldata;
 	
+	gfloat j;
+	
 	int zero_frames;
 	int zero_frames_count;
 	
@@ -160,7 +162,7 @@ struct xmms_output_St {
 
 	xmms_output_filler_state_t filler_state;
 	xmms_output_filler_state_t new_internal_filler_state;
-
+	xmms_ringbuf_t *nothing_buffer;
 	xmms_ringbuf_t *filler_buffer;
 	xmms_ringbuf_t *filler_bufferA;
 	xmms_ringbuf_t *filler_bufferB;
@@ -727,6 +729,7 @@ xmms_output_filler (void *arg)
 						XMMS_DBG ("Switching buffers! ");
 						while(g_atomic_int_get(&output->swap_buffers) == TRUE) {
 							g_usleep(12000);
+											XMMS_DBG ("zzzzzzzzzzzzzzz");
 						}
 					}
 				}
@@ -930,6 +933,7 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 		
 		if ((output->fader.current_frame_number > output->fader.total_frames) || (output->fader.current_frame_number == 0)){
 			output->fader.current_frame_number = 0;
+			output->rolldata->resdata.end_of_input = 0;
 		} else {
 			output->fader.current_frame_number = output->fader.total_frames - output->fader.current_frame_number;
 		}
@@ -949,6 +953,10 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 
 
 	if (output->swap_buffers) {
+	
+				XMMS_DBG ("im going to swap");
+	
+	
 		xmms_output_buffer_swap(output);
 	}
 	
@@ -958,26 +966,135 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 				
 				
 	if (output->fader.status) {
-		output->fader.format = output->format;
-		//fade_slice(&output->fader, buffer, ret);
-		ret = 0;
-		while (ret != len )
-			ret += xmms_roll_read (output->rolldata, output->filler_buffer, buffer + ret, len - ret, ((float)output->fader.total_frames / 1200 )/ (float)output->fader.current_frame_number / 500);			
 
-			output->fader.current_frame_number = output->fader.current_frame_number + len /8;
+		//fade_slice(&output->fader, buffer, ret);
+		
+		if (output->fader.current_frame_number == 0) {
+			src_reset (output->rolldata->resampler);
+		}
+		//int j;
+		
+		
+					if (output->j == 0.0) { 
+			
+			if (output->fader.status == FADING_OUT) { 
+				output->j = 100.0;
+			} else {
+			output->j = 85.0;
+			
+			}		
+			
+			
+			//src_set_ratio(output->rolldata->resampler, (double)(100.0 / output->j));
+			output->rolldata->resdata.src_ratio = 100.0 / output->j ;
+			}
+		
+		int x;
+		ret = 0;
+		int ret2;
+		ret2 = 0;
+		if(output->fader.current_frame_number <= (output->fader.total_frames - 1524)) {
+		while (ret != len )
+			ret += xmms_roll_read (output->rolldata, output->filler_buffer, buffer + ret, len - ret, 0);			
+		} else {
+		//output->rolldata->resdata.end_of_input = 1;
+		output->rolldata->resdata.src_ratio = 1;
+	//	while (TRUE) {
+			ret2 = xmms_roll_read (output->rolldata, output->filler_buffer, buffer + ret, len - ret, 1);
+			XMMS_DBG ("ret2 %d", ret2 );
+			ret = ret + ret2;
+			//if (ret2 == 0) {
+				x = -1;
+				XMMS_DBG ("hel me");
+				x = find_final_zero_crossing (buffer, ret);
+				if (x != -1) {
+					ret = x * 8; 
+					//ret = ret - 8;
+				}
+			
+				//break;
+				
+				//}
+		//}
+		
+
+		
+
+
+		if (ret < len) {
+			XMMS_DBG ("needed %d more", len - ret );
+		ret += xmms_ringbuf_read (output->filler_buffer, buffer + ret, len - ret);
+
+		//	XMMS_DBG ("crossfucking my self" );
+		//			crossfade_slice_float(buffer, buffer, buffer, len, len / 4, len);
+
+
+		}
+
+		}
+			
+			
+			
+			
+			//if(!(output->fader.current_frame_number % 4096)) {
+			
+						if (output->fader.status == FADING_OUT) { 
+			output->j = output->j - 0.8;
+									output->rolldata->resdata.src_ratio = 100.0 / output->j;
+									
+									//src_set_ratio(output->rolldata->resampler, (double)(100.0 / output->j));			
+									
+
+			} else {
+			output->j = output->j + 0.15;
+						output->rolldata->resdata.src_ratio = 100.0 / output->j;
+						
+					//src_set_ratio(output->rolldata->resampler, (double)(100.0 / output->j));
+						
+						
+			}	
+			
+			//}
+
+
+			
+			
+
+/*
+
+					if (output->fader.status == FADING_OUT) {	
+							output->fader.current_fade_amount[j] = ((output->fader.total_frames - (output->fader.current_frame_number )) * 100.0) / output->fader.total_frames;
+						} else {
+							output->fader.current_fade_amount[j] = ((output->fader.current_frame_number ) * 100.0) / output->fader.total_frames;
+						}
+*/
+
+	
+	
+	XMMS_DBG ("did %f", 100.0 / output->j );
+	
+			output->fader.format = output->format;
+		fade_slice(&output->fader, buffer, ret);
+			//output->fader.current_frame_number = output->fader.current_frame_number + len / 8;
 			XMMS_DBG ("Got %d of len %d", ret, len );
 		
 		
 		if (output->fader.current_frame_number >= output->fader.total_frames) {
+		
+					output->j = 0;
+		
 			if ((output->zero_frames) && (output->fader.status == FADING_OUT)){
 				output->zero_frames_count = output->zero_frames;
 			} else {
+
 				fade_complete(output);
 			}
 		}
 	}
 	
 	if(output->crossfade) {		
+	ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
+				XMMS_DBG ("crossfading %d " ,  output->crossfade );
 
 				if (xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
 				{
@@ -1018,13 +1135,29 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 	g_return_val_if_fail (output, -1);
 	g_return_val_if_fail (buffer, -1);
 
+
+	if (output->swap_buffers) {
+	
+				XMMS_DBG ("im fucked up");
+	
+	
+
+	}
+	
+
+
 	if ((output->transition) || (output->xtransition)) {
 		ret = xmms_transition_read (output, buffer, len);
 	} else {
+	
+
+	
 		ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
+
 	}
 	
 	if (ret == 0 && xmms_ringbuf_iseos (output->filler_buffer)) {
+					XMMS_DBG ("COCKEDdddddddddddddddddddddddddddddddddddddddddddddd");
 		xmms_output_filler_message (output, STOP);
 		xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_STOP);
 		return -1;
@@ -1048,6 +1181,16 @@ xmms_output_read_wait (xmms_output_t *output, char *buffer, gint len)
 guint
 xmms_output_bytes_available (xmms_output_t *output)
 {
+
+	if (output->swap_buffers) {
+	
+				XMMS_DBG ("im going to swap from BA!");
+	
+	
+		xmms_output_buffer_swap(output);
+	}
+
+
 	return xmms_ringbuf_bytes_used(output->filler_buffer);
 }
 
@@ -1615,6 +1758,8 @@ xmms_output_destroy (xmms_object_t *object)
 	xmms_ringbuf_destroy (output->playback_messages);
 	xmms_ringbuf_destroy (output->filler_messages);
 
+	xmms_ringbuf_destroy (output->nothing_buffer);
+
 	xmms_ipc_broadcast_unregister ( XMMS_IPC_SIGNAL_PLAYBACK_VOLUME_CHANGED);
 	xmms_ipc_broadcast_unregister ( XMMS_IPC_SIGNAL_PLAYBACK_STATUS);
 	xmms_ipc_broadcast_unregister ( XMMS_IPC_SIGNAL_PLAYBACK_CURRENTID);
@@ -1704,6 +1849,8 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->xtransition = FALSE;
 	output->zero_frames = 56000;
 	
+	output->j = 0;	
+
 	output->zero_frames_count = 0;
 
 	output->new_internal_filler_state = NOOP;
@@ -1711,7 +1858,7 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->rolldata = xmms_roll_init(output->rolldata);
 
 	output->playback_messages = xmms_ringbuf_new (size);
-
+	output->nothing_buffer = xmms_ringbuf_new (666);
 	output->filler_bufferA = xmms_ringbuf_new (size);
 	output->filler_bufferB = xmms_ringbuf_new (size);
 

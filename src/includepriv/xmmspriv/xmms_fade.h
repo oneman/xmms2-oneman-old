@@ -51,6 +51,7 @@ typedef enum xmms_transition_state_E {
 	JUMPING,
 } xmms_transition_state_t;
 
+int find_final_zero_crossing (void *buffer, int len);
 
 void fade_slice(xmms_fader_t *fader, void *buffer, int len);
 

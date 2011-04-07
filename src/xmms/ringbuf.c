@@ -14,7 +14,7 @@
  *  Lesser General Public License for more details.
  */
 
-
+#include "xmms/xmms_log.h"
 
 #ifndef RINGBUFTEST
 #include "xmmspriv/xmms_ringbuf.h"
@@ -282,6 +282,55 @@ xmms_ringbuf_read (xmms_ringbuf_t *ringbuf, gpointer data, guint len)
 
 	return r;
 }
+
+
+
+/**
+ * Reads data from the ringbuffer. This is a non-blocking call and can
+ * return less data than you wanted. Use #xmms_ringbuf_wait_used to
+ * ensure that you get as much data as you want.
+ *
+ * @param ringbuf Buffer to read from
+ * @param data Allocated buffer where the readed data will end up
+ * @param len number of bytes to read
+ * @returns number of bytes that acutally was read.
+ */
+guint
+xmms_ringbuf_read_cutzero (xmms_ringbuf_t *ringbuf, gpointer data, guint len)
+{
+	guint r;
+
+	g_return_val_if_fail (ringbuf, 0);
+	g_return_val_if_fail (data, 0);
+	g_return_val_if_fail (len > 0, 0);
+
+	r = read_bytes (ringbuf, (guint8 *) data, len);
+	
+XMMS_DBG("mfker! %d %d ", len, r);
+	
+	float *data2;
+	data2 = data;
+	int x, r2,y ;
+	r2 = r;
+	x = find_final_zero_crossing (data, r);
+	if(x != -1) {
+	
+		r2 = x * 8;
+
+for(y = (x * 2 ) - 2; y < len / 4; y++) {
+			data2[y] = 0.0; }
+	
+	}
+XMMS_DBG("mfker2222222222222222222222222222! %d %d %d", len, r, x);
+	ringbuf->rd_index = (ringbuf->rd_index + r2) % ringbuf->buffer_size;
+
+	if (r) {
+		g_cond_broadcast (ringbuf->free_cond);
+	}
+
+	return r;
+}
+
 
 /**
  * Same as #xmms_ringbuf_read but does not advance in the buffer after

@@ -7,6 +7,95 @@
 #include "xmmspriv/xmms_fade.h"
 
 
+int find_final_zero_crossing (void *buffer, int len) {
+						XMMS_DBG("hi crosa %d", len);
+	float *samples_float;
+	samples_float = (float*)buffer;
+	int frames, channels;
+		//frames = len / xmms_sample_frame_size_get(fader->format);
+			frames = len / 8;
+			channels = 2;
+			int final_frame[2];
+						int sign[2];
+			int lastsign[2];
+			
+			int i , j;
+final_frame[0] = -5;
+final_frame[1] = -666;
+
+				for (j = 0; j < channels; j++) {
+					if (samples_float[(frames - 1)*channels + j] >= 0) {
+						lastsign[j] = 1;
+					} else {
+						lastsign[j] = 0;
+					}
+				}
+				
+				
+			for (i = frames - 1; i > -1; i--) {	
+				for (j = 0; j < channels; j++) {
+
+						if (samples_float[i*channels + j] >= 0) {
+							sign[j] = 1;
+						} else {
+							sign[j] = 0;
+						}
+			
+						if (sign[j] != lastsign[j]) {	
+						
+						
+						   if ((samples_float[i*channels + j] != 0.0) && (samples_float[i*channels + j] != -0.0)) {
+							final_frame[j] = i + 1;
+							
+							}
+							
+						}
+						
+						lastsign[j] = sign[j];
+						
+					}
+					
+						if (final_frame[0] == final_frame[1]) {	
+						
+						XMMS_DBG("final 1 %f", samples_float[(final_frame[0] * 2) - 4]);
+						XMMS_DBG("final + %f", samples_float[(final_frame[1] * 2) - 3 ]);	
+						
+					XMMS_DBG("final 1 %f", samples_float[(final_frame[0] * 2) - 1]);
+						XMMS_DBG("final + %f", samples_float[(final_frame[1] * 2) - 2 ]);
+
+									XMMS_DBG("final ::1 %f", samples_float[(final_frame[0] * 2) ]);
+						XMMS_DBG("final ::+ %f", samples_float[(final_frame[1] * 2) + 1]);	
+
+							
+							XMMS_DBG("final 1 %f", samples_float[(final_frame[0] * 2) + 1]);
+						XMMS_DBG("final + %f", samples_float[(final_frame[1] * 2) + 2 ]);
+						
+
+						
+						XMMS_DBG("final 1 %f", samples_float[(final_frame[0] * 2) + 3]);
+						XMMS_DBG("final + %f", samples_float[(final_frame[1] * 2) + 4 ]);
+			
+					XMMS_DBG("final 1 %f", samples_float[(final_frame[0] * 2) + 5]);
+						XMMS_DBG("final + %f", samples_float[(final_frame[1] * 2) + 6 ]);
+			
+						
+						
+							XMMS_DBG("found stereo zero corssing yah! %d", final_frame[0]);
+							return final_frame[0];
+						}
+					
+				}
+				
+
+						XMMS_DBG("No Zero stereo Cross found fuck");
+									return -1;
+					
+				
+		
+	
+
+}
+
 
 
 void

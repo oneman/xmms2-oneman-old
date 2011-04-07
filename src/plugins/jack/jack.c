@@ -301,12 +301,15 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 		while (toread) {
 			gint t, avail;
 
-			t = MIN (toread * CHANNELS * sizeof (xmms_samplefloat_t),
+			// DID we fuck shit up and define channels as 128 somewhere?!
+
+			t = MIN (toread * 2 * sizeof (xmms_samplefloat_t),
 			         sizeof (tbuf));
 
 			avail = xmms_output_bytes_available(output);
 			if(avail < t) {
 				data->underruns++;
+								XMMS_DBG ("frames wanted: %d toreadbs: %d la %d", frames, toread, t );
 				XMMS_DBG ("Jack Output Underun Number %d! Not Enough Bytes Availible. Wanted: %d Avail: %d", data->underruns, t, avail );
 				break;
 			}
