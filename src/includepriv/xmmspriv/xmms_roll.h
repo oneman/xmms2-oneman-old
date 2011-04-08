@@ -20,7 +20,7 @@ typedef struct {
 
 	gfloat pitch;
 	SRC_DATA resdata;
-	gboolean enabled;
+
 } xmms_roll_data_t;
 
 

@@ -306,8 +306,6 @@ xmms_ringbuf_read_cutzero (xmms_ringbuf_t *ringbuf, gpointer data, guint len)
 
 	r = read_bytes (ringbuf, (guint8 *) data, len);
 	
-XMMS_DBG("mfker! %d %d ", len, r);
-	
 	float *data2;
 	data2 = data;
 	int x, r2,y ;
@@ -317,11 +315,12 @@ XMMS_DBG("mfker! %d %d ", len, r);
 	
 		r2 = x * 8;
 
-for(y = (x * 2 ) - 2; y < len / 4; y++) {
-			data2[y] = 0.0; }
-	
+		for(y = (x * 2 ) - 2; y < len / 4; y++) {
+			data2[y] = 0.0; 
+		}
+
 	}
-XMMS_DBG("mfker2222222222222222222222222222! %d %d %d", len, r, x);
+
 	ringbuf->rd_index = (ringbuf->rd_index + r2) % ringbuf->buffer_size;
 
 	if (r) {
