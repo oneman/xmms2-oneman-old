@@ -726,10 +726,11 @@ xmms_output_filler (void *arg)
 						output->swap_buffers = TRUE;
 						output->xtransition = TRUE;
 						xmms_ringbuf_set_eos(output->filler_buffer, TRUE);
-						XMMS_DBG ("Switching buffers! ");
+						XMMS_DBG ("Switching buffers!");
 						while(g_atomic_int_get(&output->swap_buffers) == TRUE) {
+							/* Wait for a message instead of spinning ?  */
 							g_usleep(12000);
-											XMMS_DBG ("zzzzzzzzzzzzzzz");
+							XMMS_DBG ("ZzZzz");
 						}
 					}
 				}
@@ -953,41 +954,27 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 
 
 	if (output->swap_buffers) {
-	
-				XMMS_DBG ("im going to swap");
-	
-	
 		xmms_output_buffer_swap(output);
 	}
-	
-	
-	
-	//ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
-				
 				
 	if (output->fader.status) {
 
-		//fade_slice(&output->fader, buffer, ret);
+
 		
 		if (output->fader.current_frame_number == 0) {
 			src_reset (output->rolldata->resampler);
 		}
-		//int j;
-		
-		
-					if (output->j == 0.0) { 
+
+		if (output->j == 0.0) { 
 			
 			if (output->fader.status == FADING_OUT) { 
 				output->j = 100.0;
 			} else {
-			output->j = 85.0;
-			
+				output->j = 85.0;
 			}		
 			
-			
-			//src_set_ratio(output->rolldata->resampler, (double)(100.0 / output->j));
 			output->rolldata->resdata.src_ratio = 100.0 / output->j ;
-			}
+		}
 		
 		int x;
 		ret = 0;
@@ -997,104 +984,55 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 		while (ret != len )
 			ret += xmms_roll_read (output->rolldata, output->filler_buffer, buffer + ret, len - ret, 0);			
 		} else {
-		//output->rolldata->resdata.end_of_input = 1;
-		output->rolldata->resdata.src_ratio = 1;
-	//	while (TRUE) {
+
+			output->rolldata->resdata.src_ratio = 1;
+
 			ret2 = xmms_roll_read (output->rolldata, output->filler_buffer, buffer + ret, len - ret, 1);
 			XMMS_DBG ("ret2 %d", ret2 );
 			ret = ret + ret2;
-			//if (ret2 == 0) {
-				x = -1;
-				XMMS_DBG ("hel me");
-				x = find_final_zero_crossing (buffer, ret);
-				if (x != -1) {
-					ret = x * 8; 
-					//ret = ret - 8;
-				}
+
+			x = -1;
+			XMMS_DBG ("hel me");
+			x = find_final_zero_crossing (buffer, ret);
+			if (x != -1) {
+				ret = x * 8; 
+			}
 			
-				//break;
-				
-				//}
-		//}
-		
 
-		
-
-
-		if (ret < len) {
-			XMMS_DBG ("needed %d more", len - ret );
-		ret += xmms_ringbuf_read (output->filler_buffer, buffer + ret, len - ret);
-
-		//	XMMS_DBG ("crossfucking my self" );
-		//			crossfade_slice_float(buffer, buffer, buffer, len, len / 4, len);
-
-
-		}
+			if (ret < len) {
+				XMMS_DBG ("needed %d more", len - ret );
+				ret += xmms_ringbuf_read (output->filler_buffer, buffer + ret, len - ret);
+			}
 
 		}
 			
-			
-			
-			
-			//if(!(output->fader.current_frame_number % 4096)) {
-			
-						if (output->fader.status == FADING_OUT) { 
+		if (output->fader.status == FADING_OUT) { 
 			output->j = output->j - 0.8;
-									output->rolldata->resdata.src_ratio = 100.0 / output->j;
-									
-									//src_set_ratio(output->rolldata->resampler, (double)(100.0 / output->j));			
-									
-
-			} else {
+			output->rolldata->resdata.src_ratio = 100.0 / output->j;
+		} else {
 			output->j = output->j + 0.15;
-						output->rolldata->resdata.src_ratio = 100.0 / output->j;
-						
-					//src_set_ratio(output->rolldata->resampler, (double)(100.0 / output->j));
-						
-						
-			}	
+			output->rolldata->resdata.src_ratio = 100.0 / output->j;				
+		}	
 			
-			//}
-
-
-			
-			
-
-/*
-
-					if (output->fader.status == FADING_OUT) {	
-							output->fader.current_fade_amount[j] = ((output->fader.total_frames - (output->fader.current_frame_number )) * 100.0) / output->fader.total_frames;
-						} else {
-							output->fader.current_fade_amount[j] = ((output->fader.current_frame_number ) * 100.0) / output->fader.total_frames;
-						}
-*/
-
-	
-	
-	XMMS_DBG ("did %f", 100.0 / output->j );
-	
-			output->fader.format = output->format;
+		output->fader.format = output->format;
 		fade_slice(&output->fader, buffer, ret);
-			//output->fader.current_frame_number = output->fader.current_frame_number + len / 8;
-			XMMS_DBG ("Got %d of len %d", ret, len );
-		
 		
 		if (output->fader.current_frame_number >= output->fader.total_frames) {
 		
-					output->j = 0;
+			output->j = 0;
 		
 			if ((output->zero_frames) && (output->fader.status == FADING_OUT)){
 				output->zero_frames_count = output->zero_frames;
 			} else {
-
 				fade_complete(output);
 			}
 		}
 	}
 	
-	if(output->crossfade) {		
-	ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
-				XMMS_DBG ("crossfading %d " ,  output->crossfade );
+	if (output->crossfade) {		
+
+		ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
+		XMMS_DBG ("crossfading %d " ,  output->crossfade );
 
 				if (xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
 				{
@@ -1137,32 +1075,20 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 
 
 	if (output->swap_buffers) {
-	
-				XMMS_DBG ("im fucked up");
-	
-	
-
+		/* Handle no transition buffer swap here? */
 	}
-	
-
 
 	if ((output->transition) || (output->xtransition)) {
 		ret = xmms_transition_read (output, buffer, len);
 	} else {
-	
-
-	
 		ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
-
 	}
 	
 	if (ret == 0 && xmms_ringbuf_iseos (output->filler_buffer)) {
-					XMMS_DBG ("COCKEDdddddddddddddddddddddddddddddddddddddddddddddd");
 		xmms_output_filler_message (output, STOP);
 		xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_STOP);
 		return -1;
 	}
-
 
 	update_playtime (output, ret);
 
@@ -1183,13 +1109,8 @@ xmms_output_bytes_available (xmms_output_t *output)
 {
 
 	if (output->swap_buffers) {
-	
-				XMMS_DBG ("im going to swap from BA!");
-	
-	
 		xmms_output_buffer_swap(output);
 	}
-
 
 	return xmms_ringbuf_bytes_used(output->filler_buffer);
 }
@@ -1271,16 +1192,7 @@ xmms_playback_client_start (xmms_output_t *output, xmms_error_t *err)
 {
 	g_return_if_fail (output);
 
-
 	xmms_output_transition_set(output, STARTING);
-
-	//output->transition = TRUE;
-	//output->tickled_when_paused = FALSE;
-	//xmms_output_filler_message (output, RUN);
-	//if (!xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_PLAY)) {
-	//	xmms_output_filler_message (output, STOP);
-	//	xmms_error_set (err, XMMS_ERROR_GENERIC, "Could not start playback");
-	//}
 
 }
 
@@ -1290,13 +1202,7 @@ xmms_playback_client_stop (xmms_output_t *output, xmms_error_t *err)
 	g_return_if_fail (output);
 	
 	xmms_output_transition_set(output, STOPPING);
-	
-	
-	//output->fader.status = INACTIVE;
 
-	//xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_STOP);
-
-	//xmms_output_filler_message (output, STOP);
 }
 
 static void
@@ -1304,16 +1210,9 @@ xmms_playback_client_pause (xmms_output_t *output, xmms_error_t *err)
 {
 	g_return_if_fail (output);
 
-
 	xmms_output_transition_set(output, PAUSING);
 
-	//output->fader.status = FADING_OUT;
-	//output->transition = TRUE;
-
 }
-
-
-
 
 
 static void
@@ -1334,7 +1233,6 @@ xmms_playback_status_check_for_message(xmms_output_t *output) {
 	ret = xmms_ringbuf_read(output->playback_messages, buf, 4);
 
 	if(ret > 0) {
-		//output->filler_state = buf[0];
 		return buf[0];
 	}
 
@@ -1349,7 +1247,7 @@ xmms_output_transition_set (xmms_output_t *output, xmms_transition_state_t trans
 	gboolean ret = TRUE;
 
 	if (!output->plugin) {
-		XMMS_DBG ("No plugin ????");
+		XMMS_DBG ("No Output plugin.");
 		return FALSE;
 	}
 
@@ -1359,16 +1257,7 @@ xmms_output_transition_set (xmms_output_t *output, xmms_transition_state_t trans
 
 	g_mutex_lock (output->status_mutex);
 
-
-
-
-
 	if (transition == STARTING) {
-	
-	
-
-	
-	
 	
 		if (output->status == XMMS_PLAYBACK_STATUS_PLAY) {
 		
@@ -1376,55 +1265,36 @@ xmms_output_transition_set (xmms_output_t *output, xmms_transition_state_t trans
 			case STOPPING:
 				xmms_playback_status_message (output, STARTING);
 				output->playback_transition_state = STOPPING;
-					output->transition = TRUE;
+				output->transition = TRUE;
 				break;
 		 	case PAUSING:
 				xmms_playback_status_message (output, RESUMING);
 				output->playback_transition_state = RESUMING;
-					output->transition = TRUE;
+				output->transition = TRUE;
 				break;
 			}
-	
-			//if starting or resuming or playing
-			//	do nothing
-			//end
-		
-		
+			
 		}
 		
 		
 		if (output->status == XMMS_PLAYBACK_STATUS_PAUSE) {
 		
-				// smarter
-		
-				xmms_playback_status_message (output, RESUMING);
-				output->playback_transition_state = RESUMING;
-					output->transition = TRUE;
-		output->tickled_when_paused = FALSE;
-	
-	xmms_output_filler_message (output, RUN);
-
-	dostart = 1;
-
-	
+			xmms_playback_status_message (output, RESUMING);
+			output->playback_transition_state = RESUMING;
+			output->transition = TRUE;
+			output->tickled_when_paused = FALSE;
+			xmms_output_filler_message (output, RUN);
+			dostart = 1;
 		}
 		
 		
 		if (output->status == XMMS_PLAYBACK_STATUS_STOP) {
-		
-				// smarter
-		
-				xmms_playback_status_message (output, STARTING);
-				output->playback_transition_state = STARTING;
-					output->transition = TRUE;
-	
-		output->tickled_when_paused = FALSE;
-	
-	xmms_output_filler_message (output, RUN);
-
-	dostart = 1;
-	
-	
+			xmms_playback_status_message (output, STARTING);
+			output->playback_transition_state = STARTING;
+			output->transition = TRUE;
+			output->tickled_when_paused = FALSE;
+			xmms_output_filler_message (output, RUN);
+			dostart = 1;
 		}
 	
 	}
@@ -1438,31 +1308,25 @@ xmms_output_transition_set (xmms_output_t *output, xmms_transition_state_t trans
 			case STOPPING:
 				xmms_playback_status_message (output, PAUSING);
 				output->playback_transition_state = PAUSING;
-					output->transition = TRUE;
+				output->transition = TRUE;
 				break;
 			case STARTING:
 				xmms_playback_status_message (output, PAUSING);
 				output->playback_transition_state = PAUSING;
-					output->transition = TRUE;
+				output->transition = TRUE;
 				break;
 			case RESUMING:
 				xmms_playback_status_message (output, PAUSING);
 				output->playback_transition_state = PAUSING;
-					output->transition = TRUE;
+				output->transition = TRUE;
 				break;
 			}
-			
-			//if pausing
-			// maybe go faster?!?!	
-			//end
-			
 	
-		/*	if (output->playback_transition_state == NONE) {
-				xmms_playback_status_message (output, PAUSING);
-				output->playback_transition_state = PAUSING;
-	
-			}
-		*/
+			/*	
+				If we pause again from pausing, maybe we could decrease
+				the remaining duration of the transition?
+				( Same with stop from stopping? )
+			*/
 		
 		}
 	
@@ -1477,32 +1341,24 @@ xmms_output_transition_set (xmms_output_t *output, xmms_transition_state_t trans
 			case PAUSING:
 				xmms_playback_status_message (output, STOPPING);
 				output->playback_transition_state = STOPPING;
-					output->transition = TRUE;
+				output->transition = TRUE;
 				break;
 			case STARTING:
 				xmms_playback_status_message (output, STOPPING);
 				output->playback_transition_state = STOPPING;
-					output->transition = TRUE;
+				output->transition = TRUE;
 				break;
 			case RESUMING:
 				xmms_playback_status_message (output, STOPPING);
 				output->playback_transition_state = STOPPING;
-					output->transition = TRUE;
+				output->transition = TRUE;
 				break;
 			}
-			
-	
-			/*if (output->playback_transition_state == NONE) {
-				xmms_playback_status_message (output, STOPPING);
-				output->playback_transition_state = STOPPING;
-	
-			}*/
 		
 		}
 		
-		
 		if (output->status == XMMS_PLAYBACK_STATUS_PAUSE) {
-				dostop = 1;
+			dostop = 1;
 		}
 	
 	}
@@ -1515,20 +1371,16 @@ xmms_output_transition_set (xmms_output_t *output, xmms_transition_state_t trans
 	if (dostart == 1) {
 	
 		if (!xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_PLAY)) {
-		xmms_output_filler_message (output, STOP);
-		xmms_error_set (err, XMMS_ERROR_GENERIC, "Could not start playback");
-	}
+			xmms_output_filler_message (output, STOP);
+			xmms_error_set (err, XMMS_ERROR_GENERIC, "Could not start playback");
+		}
 	}
 	
 	if (dostop == 1) {
-	
-				xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_STOP);
-				xmms_output_filler_message (output, STOP);
+		xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_STOP);
+		xmms_output_filler_message (output, STOP);
 	}
 	
-	
-
-
 	return ret;
 }
 
