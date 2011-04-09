@@ -301,95 +301,23 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 		while (toread) {
 			gint t, avail;
 
-			// DID we fuck shit up and define channels as 128 somewhere?!
-
-			t = MIN (toread * 2 * sizeof (xmms_samplefloat_t),
+			t = MIN (toread * CHANNELS * sizeof (xmms_samplefloat_t),
 			         sizeof (tbuf));
 
 			avail = xmms_output_bytes_available(output);
 			if(avail < t) {
 				data->underruns++;
-								XMMS_DBG ("frames wanted: %d toreadbs: %d la %d", frames, toread, t );
 				XMMS_DBG ("Jack Output Underun Number %d! Not Enough Bytes Availible. Wanted: %d Avail: %d", data->underruns, t, avail );
 				break;
 			}
-			
-			/*
-
-			hit_hotspot = 0;
-			xmms_output_get_vectors(output, output_vectors);
-			hotspot_pos = xmms_output_get_next_hotspot_pos(output);
-			ringbuf_pos = xmms_output_get_ringbuf_pos(output);
-			if (hotspot_pos != -1 )	{
-				if((ringbuf_pos <= hotspot_pos) && (hotspot_pos <= (ringbuf_pos + t))) { 
-					hit_hotspot = 1;
-					t = hotspot_pos - ringbuf_pos;
-				} else {
-
-				if((ringbuf_pos > hotspot_pos) && ((t - (32768 - ringbuf_pos)) > hotspot_pos)) { 
-					hit_hotspot = 1;
-					t = (32768 - ringbuf_pos) + hotspot_pos;
-				} 
-				}
-			} else {
-
-			}
-
-			res = MIN(t, output_vectors[0].len);
-
-			res /= CHANNELS * sizeof (xmms_samplefloat_t);
-			vecfloat1 = (xmms_samplefloat_t *)output_vectors[0].buf;
-
-			for (i = 0; i < res; i++) {
-				for (j = 0; j < CHANNELS; j++) {
-					buf[j][i] = vecfloat1[i*CHANNELS + j] * data->volume_actual[j];
-				}
-			}
-			toread -= res;
-			
-			oldres = res;
-
-
-			if (output_vectors[1].len > 0 && toread > 0) {
-
-			res = res * (CHANNELS * sizeof (xmms_samplefloat_t));
-			res = t - res;
-
-			res /= CHANNELS * sizeof (xmms_samplefloat_t);
-			vecfloat2 = (xmms_samplefloat_t *)output_vectors[1].buf;
-
-
-			if((oldres %= 2) == 1) {
-
-					buf[1][oldres] = vecfloat2[0*CHANNELS + 1];
-			}
-			oldres = oldres + 1;
-			for (i = 0; i < res; i++) {
-				for (j = 0; j < CHANNELS; j++) {
-					buf[j][i + oldres] = vecfloat2[i*CHANNELS + j] * data->volume_actual[j];
-				}
-			}
-			toread -= res;
-			}
-
-			xmms_output_advance(output, t);
-			if (hit_hotspot)	{
-				xmms_output_hit_hotspot(output);
-			}
-
-			*/
-			
-			
-			
+				
 			res = xmms_output_read (output, (gchar *)tbuf, t);
 
 			if (res <= 0) {
-				XMMS_DBG ("output_read returned %d", res);
 				break;
 			}
 
 			if (res < t) {
-				XMMS_DBG ("Jack Output Underun! Not Enough Bytes Read!");
 				break;
 			}
 
