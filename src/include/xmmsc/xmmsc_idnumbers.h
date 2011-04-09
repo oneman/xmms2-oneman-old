@@ -203,7 +203,8 @@ typedef enum {
 
 typedef enum {
 	XMMS_PLAYBACK_SEEK_CUR = 1,
-	XMMS_PLAYBACK_SEEK_SET
+	XMMS_PLAYBACK_SEEK_SET,
+	XMMS_PLAYBACK_SEEK_TICKLE
 } xmms_playback_seek_mode_t;
 
 typedef enum {

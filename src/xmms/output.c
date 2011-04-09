@@ -48,6 +48,9 @@ typedef enum xmms_output_filler_message_E {
 	QUIT,		/* This actually ends the output filler thread */	
 	TICKLE,		/* Manual track change or tickle the filler to the next track */
 	SEEK,
+	TICKLESEEK,
+	RUNSEEK,
+	SEEKNOCLEAR,
 	NOOP,		/* this is for convience */
 } xmms_output_filler_message_t, xmms_output_filler_state_t;
 
@@ -387,6 +390,19 @@ seek_done_noskip (void *data)
 }
 
 static void
+xmms_output_filler_tickle_seek (xmms_output_t *output, gint samples)
+{
+
+	xmms_output_filler_message_t message;
+
+	g_atomic_int_set(&output->filler_seek, samples);
+	message = TICKLESEEK;
+
+	xmms_output_filler_message(output, message);
+
+}
+
+static void
 xmms_output_filler_seek (xmms_output_t *output, gint samples)
 {
 
@@ -532,7 +548,7 @@ xmms_output_filler (void *arg)
 
 		/* TICKLED State, aka Manual Track Change */
 
-		if (output->filler_state == TICKLE) {
+		if ((output->filler_state == TICKLE) || (output->filler_state == TICKLESEEK)){
 			if (chain) {
 				xmms_object_unref (chain);
 				chain = NULL;
@@ -555,13 +571,20 @@ xmms_output_filler (void *arg)
 				//g_atomic_int_set(&output->played, 0);
 				//update_playtime (output, 0);
 			}
+			
+			
+			if (output->filler_state == TICKLESEEK) {
+				output->new_internal_filler_state = RUNSEEK;
+				continue;
+			}
+			
 
 			continue;
 		}
 
 		/* SEEK State */
 
-		if (output->filler_state == SEEK) {
+		if ((output->filler_state == SEEK) || (output->filler_state == SEEKNOCLEAR)) {
 			if (!chain) {
 				XMMS_DBG ("Seek without chain, ignoring..");
 				output->new_internal_filler_state = STOP;
@@ -615,7 +638,10 @@ xmms_output_filler (void *arg)
 				}
 
 					output->switchbuffer_seek = TRUE;
-					output->inactive_filler_buffer = (xmms_ringbuf_t *)xmms_output_get_inactive_buffer(output);
+					
+					if (output->filler_state == SEEK) {
+						output->inactive_filler_buffer = (xmms_ringbuf_t *)xmms_output_get_inactive_buffer(output);
+					}
 					output->toskip = output->filler_skip * xmms_sample_frame_size_get (output->format);
 					xmms_ringbuf_hotspot_set (output->inactive_filler_buffer, seek_done_noskip, NULL, output);
 
@@ -676,10 +702,18 @@ xmms_output_filler (void *arg)
 			xmms_object_ref (chain);
 			XMMS_DBG ("New chain ready");
 			if(output->switchbuffer_seek == TRUE) {
+			
+						XMMS_DBG ("sdfffffffffffffffffffffffffffffeady");
+			
 				xmms_ringbuf_hotspot_set (output->inactive_filler_buffer, song_changed, song_changed_arg_free, hsarg);
 			} else {
 				xmms_ringbuf_hotspot_set (output->filler_buffer, song_changed, song_changed_arg_free, hsarg);
 			}
+		}
+		
+		if (output->filler_state == RUNSEEK) {
+			output->new_internal_filler_state = SEEKNOCLEAR;
+			continue;
 		}
 
 
@@ -1166,8 +1200,15 @@ xmms_playback_client_seekms (xmms_output_t *output, gint32 ms, gint32 whence, xm
 	if (output->format) {
 		samples = xmms_sample_ms_to_samples (output->format, ms);
 
-		xmms_playback_client_seeksamples (output, samples,
-		                                  XMMS_PLAYBACK_SEEK_SET, error);
+		if (whence == XMMS_PLAYBACK_SEEK_TICKLE) {
+
+			xmms_playback_client_seeksamples (output, samples,
+		                                  	XMMS_PLAYBACK_SEEK_TICKLE, error);
+		} else {
+		
+			xmms_playback_client_seeksamples (output, samples,
+		                                  		XMMS_PLAYBACK_SEEK_SET, error);
+		}
 	}
 }
 
@@ -1183,7 +1224,15 @@ xmms_playback_client_seeksamples (xmms_output_t *output, gint32 samples, gint32 
 
 	}
 
-	xmms_output_filler_seek (output, samples);
+	//if (whence == XMMS_PLAYBACK_SEEK_TICKLE) {
+	if (TRUE) {
+		xmms_output_filler_tickle_seek (output, samples);
+	
+	} else {
+	
+		xmms_output_filler_seek (output, samples);
+		
+	}
 
 }
 
