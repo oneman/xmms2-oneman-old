@@ -402,8 +402,76 @@ fade_slice(xmms_fader_t *fader, void *buffer, int len) {
 
 // Crossfade...
 
+
+
+int crossfade_slice(xmms_xtransition_t *transition, void *buffer, int len) {
+
+
+	int bytes, ret, clen;
+		
+		guint8 oldbuffer[32000];
+
+		if (transition->setup == FALSE) {
+
+
+			bytes = xmms_ringbuf_bytes_used (transition->outring);
+
+			transition->current_frame_number = 0;
+			transition->total_frames = bytes / xmms_sample_frame_size_get(transition->format);
+
+			transition->setup = TRUE;
+			XMMS_DBG ("Got %d frames for cross transition", transition->total_frames);
+			
+		
+		}
+		
+		clen = MIN (len, ((transition->total_frames - transition->current_frame_number) * xmms_sample_frame_size_get(transition->format)));
+		
+		ret = xmms_ringbuf_read (transition->outring, &oldbuffer, clen);
+		XMMS_DBG ("got old %d " , ret);
+		ret = xmms_ringbuf_read (transition->inring, buffer, clen);
+		XMMS_DBG ("got new %d " , ret);
+		
+		if (clen < len)
+			xmms_ringbuf_read (transition->inring, buffer + clen, len - clen);
+		
+		XMMS_DBG ("crossfading %d " , transition->current_frame_number + (len / xmms_sample_frame_size_get(transition->format)));
+
+		if (xmms_stream_type_get_int(transition->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
+		{
+			ret = crossfade_slice_s16(transition, &oldbuffer, buffer, buffer, len);
+		}
+				
+		if (xmms_stream_type_get_int(transition->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S32)
+		{
+			ret = crossfade_slice_s32(transition, &oldbuffer, buffer, buffer, len);
+		}
+				
+		if (xmms_stream_type_get_int(transition->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT)
+		{
+			ret = crossfade_slice_float(transition, &oldbuffer, buffer, buffer, len);			
+		}
+
+
+		transition->current_frame_number = transition->current_frame_number + (len / xmms_sample_frame_size_get(transition->format));
+
+		/* Finish Transition */
+
+		if (transition->current_frame_number >= transition->total_frames) {
+			transition->setup = FALSE;
+			XMMS_DBG ("done with cross transition");
+		}		
+		
+	return len;
+
+}
+
+
+
+
+
 int
-crossfade_slice_float(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_slice, int total_samples) {
+crossfade_slice_float(xmms_xtransition_t *transition, void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int len) {
 
 	/* ok lets handle those void * and hard code it to float for now, is it possible to cast without a new var?? */
 	
@@ -412,11 +480,11 @@ crossfade_slice_float(void *sample_buffer_from, void *sample_buffer_to, void *fa
 	float *faded_samples = (float*)faded_sample_buffer;
 
 	/* well as with the sample type we dont really want to hard code the number of channels */
-	int number_of_channels, frames_in_slice, total_frames;
+	int number_of_channels, frames_in_slice;
 	number_of_channels = 2;
 	
-	frames_in_slice = samples_in_slice / number_of_channels;
-	total_frames = total_samples / number_of_channels;
+	frames_in_slice = len / xmms_sample_frame_size_get(transition->format);
+
 	
 
 	int i ,j, n;
@@ -440,7 +508,7 @@ crossfade_slice_float(void *sample_buffer_from, void *sample_buffer_to, void *fa
 		for (j = 0; j < number_of_channels; j++) {
 
 
-				next_in_fade_amount = cos(3.14159*0.5*(((float)(i + (sample_start_number / number_of_channels)))  + 0.5)/(float)total_frames);
+				next_in_fade_amount = cos(3.14159*0.5*(((float)(i + (transition->current_frame_number)))  + 0.5)/(float)transition->total_frames);
 
 				next_in_fade_amount = next_in_fade_amount * next_in_fade_amount;
 				next_in_fade_amount = 1 - next_in_fade_amount;
@@ -451,7 +519,7 @@ crossfade_slice_float(void *sample_buffer_from, void *sample_buffer_to, void *fa
 				}
 							
 				
-				next_fade_amount = cos(3.14159*0.5*(((float)(i + (sample_start_number / number_of_channels))) + 0.5)/(float)total_frames);
+				next_fade_amount = cos(3.14159*0.5*(((float)(i + (transition->current_frame_number))) + 0.5)/(float)transition->total_frames);
 
 				next_fade_amount = next_fade_amount * next_fade_amount;
 
@@ -488,12 +556,12 @@ crossfade_slice_float(void *sample_buffer_from, void *sample_buffer_to, void *fa
 			
 			if (sign[n][j] != lastsign[n][j]) {
 			 if(n == 1) {
-			 	//XMMS_DBG("fade amount in is: %f ", next_in_fade_amount);
+			// XMMS_DBG("fade amount in is: %f ", next_in_fade_amount);
 				current_fade_amount[n][j] = next_in_fade_amount;
 			} else {
 				current_fade_amount[n][j] = next_fade_amount;
 			}
-				//XMMS_DBG ("Zero Crossing at %d", current_sample_number);
+				//XMMS_DBG ("Zero Crossing at");
 				if(current_fade_amount[n][j] < 0)
 					current_fade_amount[n][j] = 0;
 				if(current_fade_amount[n][j] > 100)
@@ -502,7 +570,7 @@ crossfade_slice_float(void *sample_buffer_from, void *sample_buffer_to, void *fa
 
 		}
 
-			faded_samples[i*number_of_channels + j] = ((((samples_from[sample_start_number + i*number_of_channels + j] * current_fade_amount[0][j]) ) + ((samples_to[i*number_of_channels + j] * current_fade_amount[1][j]) )) );
+			faded_samples[i*number_of_channels + j] = ((((samples_from[i*number_of_channels + j] * current_fade_amount[0][j]) ) + ((samples_to[i*number_of_channels + j] * current_fade_amount[1][j]) )) );
 
 			lastsign[0][j] = sign[0][j];
 			lastsign[1][j] = sign[1][j];
@@ -511,13 +579,13 @@ crossfade_slice_float(void *sample_buffer_from, void *sample_buffer_to, void *fa
 		
 	}
 
-	return 0;
+	return len;
 
 }
 
 
 int
-crossfade_slice_s16(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_slice, int total_samples) {
+crossfade_slice_s16(xmms_xtransition_t *transition, void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int len) {
 
 	/* ok lets handle those void * and hard code it to float for now, is it possible to cast without a new var?? */
 	
@@ -526,11 +594,10 @@ crossfade_slice_s16(void *sample_buffer_from, void *sample_buffer_to, void *fade
 	gint16 *faded_samples = (gint16*)faded_sample_buffer;
 
 	/* well as with the sample type we dont really want to hard code the number of channels */
-	int number_of_channels, frames_in_slice, total_frames;
+	int number_of_channels, frames_in_slice;
 	number_of_channels = 2;
 	
-	frames_in_slice = samples_in_slice / number_of_channels;
-	total_frames = total_samples / number_of_channels;
+	frames_in_slice = len / xmms_sample_frame_size_get(transition->format);
 	
 
 	int i ,j, n;
@@ -555,7 +622,7 @@ crossfade_slice_s16(void *sample_buffer_from, void *sample_buffer_to, void *fade
 
 
 
-				next_in_fade_amount = cos(3.14159*0.5*(((float)(i + (sample_start_number / number_of_channels)))  + 0.5)/(float)total_frames);
+				next_in_fade_amount = cos(3.14159*0.5*(((float)(i + (transition->current_frame_number)))  + 0.5)/(float)transition->total_frames);
 
 				next_in_fade_amount = next_in_fade_amount * next_in_fade_amount;
 				next_in_fade_amount = 1 - next_in_fade_amount;
@@ -567,7 +634,7 @@ crossfade_slice_s16(void *sample_buffer_from, void *sample_buffer_to, void *fade
 
 							
 				
-				next_fade_amount = cos(3.14159*0.5*(((float)(i + (sample_start_number / number_of_channels))) + 0.5)/(float)total_frames);
+				next_fade_amount = cos(3.14159*0.5*(((float)(i + (transition->current_frame_number))) + 0.5)/(float)transition->total_frames);
 
 				next_fade_amount = next_fade_amount * next_fade_amount;
 
@@ -618,7 +685,7 @@ crossfade_slice_s16(void *sample_buffer_from, void *sample_buffer_to, void *fade
 
 		}
 
-			faded_samples[i*number_of_channels + j] = ((((samples_from[sample_start_number + i*number_of_channels + j] * current_fade_amount[0][j]) ) + ((samples_to[i*number_of_channels + j] * current_fade_amount[1][j]) )) );
+			faded_samples[i*number_of_channels + j] = ((((samples_from[transition->current_frame_number + i*number_of_channels + j] * current_fade_amount[0][j]) ) + ((samples_to[i*number_of_channels + j] * current_fade_amount[1][j]) )) );
 
 			lastsign[0][j] = sign[0][j];
 			lastsign[1][j] = sign[1][j];
@@ -627,13 +694,13 @@ crossfade_slice_s16(void *sample_buffer_from, void *sample_buffer_to, void *fade
 		
 	}
 
-	return 0;
+	return len;
 
 }
 
 
 int
-crossfade_slice_s32(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_slice, int total_samples) {
+crossfade_slice_s32(xmms_xtransition_t *transition, void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int len) {
 
 	/* ok lets handle those void * and hard code it to float for now, is it possible to cast without a new var?? */
 	
@@ -642,11 +709,10 @@ crossfade_slice_s32(void *sample_buffer_from, void *sample_buffer_to, void *fade
 	gint *faded_samples = (gint*)faded_sample_buffer;
 
 	/* well as with the sample type we dont really want to hard code the number of channels */
-	int number_of_channels, frames_in_slice, total_frames;
+	int number_of_channels, frames_in_slice;
 	number_of_channels = 2;
 	
-	frames_in_slice = samples_in_slice / number_of_channels;
-	total_frames = total_samples / number_of_channels;
+	frames_in_slice = len / xmms_sample_frame_size_get(transition->format);
 	
 
 	int i ,j, n;
@@ -670,7 +736,7 @@ crossfade_slice_s32(void *sample_buffer_from, void *sample_buffer_to, void *fade
 
 
 
-				next_in_fade_amount = cos(3.14159*0.5*(((float)(i + (sample_start_number / number_of_channels)))  + 0.5)/(float)total_frames);
+				next_in_fade_amount = cos(3.14159*0.5*(((float)(i + (transition->current_frame_number)))  + 0.5)/(float)transition->total_frames);
 
 				next_in_fade_amount = next_in_fade_amount * next_in_fade_amount;
 				next_in_fade_amount = 1 - next_in_fade_amount;
@@ -682,7 +748,7 @@ crossfade_slice_s32(void *sample_buffer_from, void *sample_buffer_to, void *fade
 
 							
 				
-				next_fade_amount = cos(3.14159*0.5*(((float)(i + (sample_start_number / number_of_channels))) + 0.5)/(float)total_frames);
+				next_fade_amount = cos(3.14159*0.5*(((float)(i + (transition->current_frame_number))) + 0.5)/(float)transition->total_frames);
 
 				next_fade_amount = next_fade_amount * next_fade_amount;
 
@@ -733,7 +799,7 @@ crossfade_slice_s32(void *sample_buffer_from, void *sample_buffer_to, void *fade
 
 		}
 
-			faded_samples[i*number_of_channels + j] = ((((samples_from[sample_start_number + i*number_of_channels + j] * current_fade_amount[0][j]) ) + ((samples_to[i*number_of_channels + j] * current_fade_amount[1][j]) )) );
+			faded_samples[i*number_of_channels + j] = ((((samples_from[transition->current_frame_number + i*number_of_channels + j] * current_fade_amount[0][j]) ) + ((samples_to[i*number_of_channels + j] * current_fade_amount[1][j]) )) );
 
 			lastsign[0][j] = sign[0][j];
 			lastsign[1][j] = sign[1][j];
@@ -742,7 +808,7 @@ crossfade_slice_s32(void *sample_buffer_from, void *sample_buffer_to, void *fade
 		
 	}
 
-	return 0;
+	return len;
 
 }
 

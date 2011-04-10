@@ -14,6 +14,8 @@
  *  Lesser General Public License for more details.
  */
 
+#include "xmmspriv/xmms_ringbuf.h"
+
 typedef enum xmms_fader_status_E {
 	INACTIVE,
 	FADING_OUT,
@@ -31,7 +33,6 @@ typedef struct xmms_fader_St {
 	int callback;
 } xmms_fader_t;
 
-
 typedef struct xmms_playback_transition_St {
 	xmms_fader_status_t status;
 	int current_frame_number;
@@ -39,6 +40,18 @@ typedef struct xmms_playback_transition_St {
 	xmms_stream_type_t *format;
 } xmms_playback_transition_t;
 
+typedef struct xmms_xtransition_St {
+	gboolean setup;
+	int current_frame_number;
+	int total_frames;
+	int final_frame[2][128];
+	float current_fade_amount[2][128];
+	int lastsign[2][128];
+	//xmms_transition_state_t *transition;
+	xmms_stream_type_t *format;
+	xmms_ringbuf_t *outring;
+	xmms_ringbuf_t *inring;
+} xmms_xtransition_t;
 
 typedef enum xmms_transition_state_E {
 	NONE,
@@ -55,11 +68,10 @@ int find_final_zero_crossing (void *buffer, int len);
 
 void fade_slice(xmms_fader_t *fader, void *buffer, int len);
 
-int crossfade_slice(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples);
+int crossfade_slice(xmms_xtransition_t *transition, void *buffer, int len);
 
-
-int crossfade_slice_float(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples);
-int crossfade_slice_s16(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples);
-int crossfade_slice_s32(void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int sample_start_number, int samples_in_chunk, int total_samples);
+int crossfade_slice_float(xmms_xtransition_t *transition, void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int len);
+int crossfade_slice_s16(xmms_xtransition_t *transition, void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int len);
+int crossfade_slice_s32(xmms_xtransition_t *transition, void *sample_buffer_from, void *sample_buffer_to, void *faded_sample_buffer, int len);
 
 

@@ -139,10 +139,7 @@ struct xmms_output_St {
 	int zero_frames;
 	int zero_frames_count;
 	
-	/* Crossfade */
-	guint8 fadebuffer[256 * 4096];
-	int crossfade;
-	int crossfade_total;
+	xmms_xtransition_t xtransition_transition;
 	
 	gboolean transition;
 	gboolean xtransition;
@@ -702,9 +699,6 @@ xmms_output_filler (void *arg)
 			xmms_object_ref (chain);
 			XMMS_DBG ("New chain ready");
 			if(output->switchbuffer_seek == TRUE) {
-			
-						XMMS_DBG ("sdfffffffffffffffffffffffffffffeady");
-			
 				xmms_ringbuf_hotspot_set (output->inactive_filler_buffer, song_changed, song_changed_arg_free, hsarg);
 			} else {
 				xmms_ringbuf_hotspot_set (output->filler_buffer, song_changed, song_changed_arg_free, hsarg);
@@ -798,45 +792,13 @@ xmms_output_filler (void *arg)
 void
 xmms_output_buffer_swap(xmms_output_t *output)
 {
-
-	// crossfade if yes no ringbuf eh way
-
-	output->crossfade = xmms_ringbuf_read (output->filler_buffer, output->fadebuffer, 64 * 4096);
-
-
-		/* handle crossfade setup here */
-		if(output->crossfade > 0) {		
-
-			if (xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
-			{
-				output->crossfade = output->crossfade / 2;
-				output->crossfade_total = output->crossfade;
-			}
-			
-			if (xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S32)
-			{
-				output->crossfade = output->crossfade / 4;
-				output->crossfade_total = output->crossfade;
-			}
-			
-			if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT)
-			{
-				output->crossfade = output->crossfade / 4;
-				output->crossfade_total = output->crossfade;		
-			}
-			
-			XMMS_DBG ("Got %d frames for crossfading", output->crossfade_total);
-			
-		}
-
-
 	if(output->filler_buffer == output->filler_bufferA) {
 		output->filler_buffer = output->filler_bufferB;
-		xmms_ringbuf_clear (output->filler_bufferA);
+		//xmms_ringbuf_clear (output->filler_bufferA);
 		xmms_ringbuf_set_eos(output->filler_bufferA, FALSE);
 	} else {
 		output->filler_buffer = output->filler_bufferA;
-		xmms_ringbuf_clear (output->filler_bufferB);
+		//xmms_ringbuf_clear (output->filler_bufferB);
 		xmms_ringbuf_set_eos(output->filler_bufferB, FALSE);
 	}
 	
@@ -849,6 +811,9 @@ void
 fade_complete(xmms_output_t *output)
 {
 
+	xmms_ringbuf_t *ringbuf;
+
+
 	if (output->fader.callback != 1) {
 		xmms_output_status_set (output, output->fader.callback);
 	}
@@ -859,6 +824,8 @@ fade_complete(xmms_output_t *output)
 	
 	output->fader.current_frame_number = 0;
 	output->fader.status = INACTIVE;
+	ringbuf = xmms_output_get_inactive_buffer(output);
+	xmms_ringbuf_clear (ringbuf);
 	output->transition = FALSE;
 }
 
@@ -867,10 +834,10 @@ xmms_output_get_inactive_buffer(xmms_output_t *output)
 {
 
 	if(output->filler_buffer == output->filler_bufferA) {
-		xmms_ringbuf_clear (output->filler_bufferB);
+		//xmms_ringbuf_clear (output->filler_bufferB);
 		return output->filler_bufferB;
 	} else {
-		xmms_ringbuf_clear (output->filler_bufferA);
+		//xmms_ringbuf_clear (output->filler_bufferA);
 		return output->filler_bufferA;
 	}
 
@@ -1063,32 +1030,18 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 		}
 	}
 	
-	if (output->crossfade) {		
+	if (output->xtransition) {		
+		output->xtransition_transition.format = output->format;
+		
+		output->xtransition_transition.outring = xmms_output_get_inactive_buffer(output);
+		output->xtransition_transition.inring = output->filler_buffer;
+		
+		ret = crossfade_slice(&output->xtransition_transition, buffer, len);
 
-		ret = xmms_ringbuf_read (output->filler_buffer, buffer, len);
-		XMMS_DBG ("crossfading %d " ,  output->crossfade );
+		if (output->xtransition_transition.setup == FALSE) {
+			output->xtransition = FALSE;
+		}
 
-				if (xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
-				{
-					crossfade_slice_s16(&output->fadebuffer, buffer, buffer, output->crossfade_total - output->crossfade, len / 2, output->crossfade_total);
-					output->crossfade = output->crossfade - len / 2;
-				}
-				if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S32)
-				{
-					crossfade_slice_s32(&output->fadebuffer, buffer, buffer, output->crossfade_total - output->crossfade, len / 4, output->crossfade_total);
-					output->crossfade = output->crossfade - len / 4;
-				}
-				if(xmms_stream_type_get_int(output->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT)
-				{
-					crossfade_slice_float(&output->fadebuffer, buffer, buffer, output->crossfade_total - output->crossfade, len / 4, output->crossfade_total);
-					output->crossfade = output->crossfade - len / 4;			
-				}
-
-				if (output->crossfade < len / 8) {
-					output->crossfade = 0;
-					output->crossfade_total = 0;
-					output->xtransition = FALSE;
-				}
 
 	}
 
@@ -1741,8 +1694,6 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	g_mutex_lock (output->filler_mutex); /* because it has to be locked or unlocked to be freed */
 
 	output->filler_state = STOP;
-	output->crossfade = 0;
-	output->crossfade_total = 0;
 	output->slice = 4096;
 	output->tickled_when_paused = FALSE;
 	
