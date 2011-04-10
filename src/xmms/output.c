@@ -82,7 +82,7 @@ static void fade_complete (xmms_output_t *output);
 
 gint xmms_transition_read (xmms_output_t *output, char *buffer, gint len);
 gint xmms_output_zero (xmms_output_t *output, char *buffer, gint len);
-void *xmms_output_get_prev_ringbuffer (xmms_output_t *output);
+void *xmms_output_get_prev_ringbuffer (xmms_output_t *output, xmms_ringbuf_t *ringbuf);
 void *xmms_output_get_next_ringbuffer (xmms_output_t *output);
 void xmms_output_buffer_swap(xmms_output_t *output);
 
@@ -840,13 +840,13 @@ xmms_output_get_next_ringbuffer(xmms_output_t *output)
 
 
 void *
-xmms_output_get_prev_ringbuffer(xmms_output_t *output)
+xmms_output_get_prev_ringbuffer(xmms_output_t *output, xmms_ringbuf_t *ringbuf)
 {
 	int z;
 
 	for (z = 0; z < output->num_ringbuffers; z++) {
 
-		if (output->ringbuffers[z] == output->ringbuffer) {
+		if (output->ringbuffers[z] == ringbuf) {
 			if (z == 0) {
 				XMMS_DBG ("Last Ringbuf was %d", output->num_ringbuffers - 1);	
 				return output->ringbuffers[output->num_ringbuffers - 1];
@@ -1072,7 +1072,7 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 	if (output->xtransition) {		
 		output->xtransition_transition.format = output->format;
 		
-		output->xtransition_transition.outring = xmms_output_get_prev_ringbuffer(output);
+		output->xtransition_transition.outring = xmms_output_get_prev_ringbuffer(output, output->ringbuffer);
 		output->xtransition_transition.inring = output->ringbuffer;
 		
 		ret = crossfade_slice(&output->xtransition_transition, buffer, len);
