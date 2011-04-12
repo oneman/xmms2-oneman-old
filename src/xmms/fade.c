@@ -407,6 +407,8 @@ fade_slice(xmms_fader_t *fader, void *buffer, int len) {
 int crossfade_slice(xmms_xtransition_t *transition, void *buffer, int len) {
 
 
+			//XMMS_DBG ("cossfade called with %d", len);
+			xmms_xtransition_t *oldtrans;
 	int bytes, ret, clen;
 		
 		guint8 oldbuffer[32000];
@@ -420,22 +422,62 @@ int crossfade_slice(xmms_xtransition_t *transition, void *buffer, int len) {
 			transition->total_frames = bytes / xmms_sample_frame_size_get(transition->format);
 
 			transition->setup = TRUE;
-			XMMS_DBG ("Got %d frames for cross transition", transition->total_frames);
+			//XMMS_DBG ("Got %d frames for cross transition", transition->total_frames);
 			
 		
 		}
 		
 		clen = MIN (len, ((transition->total_frames - transition->current_frame_number) * xmms_sample_frame_size_get(transition->format)));
 		
-		ret = xmms_ringbuf_read (transition->outring, &oldbuffer, clen);
-		XMMS_DBG ("got old %d " , ret);
+		// ok so if we are readin old we read old
+		if (transition->readlast) {
+			//XMMS_DBG ("reading old in the old way");
+			ret = crossfade_slice(transition->last, &oldbuffer, clen);
+			//ret = xmms_ringbuf_read (transition->outring, &oldbuffer, clen);
+			//XMMS_DBG ("got old %d " , ret);
+			
+
+			
+			oldtrans = (xmms_xtransition_t *)transition->last;
+			
+			if (( ret < clen ) && (oldtrans->setup == false)) {
+			
+						XMMS_DBG ("old transition did finish, switching to ring, needed %d more", clen - ret);
+						transition->readlast = false;
+						ret = xmms_ringbuf_read (transition->inring, &oldbuffer + ret, clen - ret);
+						XMMS_DBG ("got ring old %d " , ret);
+			
+			}
+			
+			
+			if (( ret < clen ) && (oldtrans->setup == true)) {
+			
+						XMMS_DBG ("something fucked up");
+			
+			
+			}
+			
+			
+			if (oldtrans->setup == false) {
+			
+						XMMS_DBG ("old transition is old goodbye");
+									transition->readlast = false;
+			
+			}
+			
+			
+		} else {
+			ret = xmms_ringbuf_read (transition->outring, &oldbuffer, clen);
+			//XMMS_DBG ("got old %d " , ret);	
+		}
+		
 		ret = xmms_ringbuf_read (transition->inring, buffer, clen);
-		XMMS_DBG ("got new %d " , ret);
+		//XMMS_DBG ("got new %d " , ret);
 		
 		if (clen < len)
 			xmms_ringbuf_read (transition->inring, buffer + clen, len - clen);
 		
-		XMMS_DBG ("crossfading %d " , transition->current_frame_number + (len / xmms_sample_frame_size_get(transition->format)));
+		//XMMS_DBG ("crossfading %d " , transition->current_frame_number + (len / xmms_sample_frame_size_get(transition->format)));
 
 		if (xmms_stream_type_get_int(transition->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
 		{
@@ -458,7 +500,18 @@ int crossfade_slice(xmms_xtransition_t *transition, void *buffer, int len) {
 		/* Finish Transition */
 
 		if (transition->current_frame_number >= transition->total_frames) {
+		// kill the old
+					if (transition->readlast) { 
+					  if(oldtrans->setup == true) {
+					 			XMMS_DBG ("had to kill the young before the old");
+							oldtrans->readlast = false;
+							oldtrans->setup = false;
+						}
+					}
+		
+		
 			transition->setup = FALSE;
+			transition->readlast = FALSE;
 			XMMS_DBG ("done with cross transition");
 		}		
 		

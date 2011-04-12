@@ -84,6 +84,10 @@ gint xmms_transition_read (xmms_output_t *output, char *buffer, gint len);
 gint xmms_output_zero (xmms_output_t *output, char *buffer, gint len);
 void *xmms_output_get_prev_ringbuffer (xmms_output_t *output, xmms_ringbuf_t *ringbuf);
 void *xmms_output_get_next_ringbuffer (xmms_output_t *output);
+
+void *xmms_output_get_prev_xtransition (xmms_output_t *output, xmms_xtransition_t *xtransition);
+void xmms_output_next_xtransition (xmms_output_t *output);
+
 void xmms_output_buffer_swap(xmms_output_t *output);
 
 static gboolean xmms_output_transition_set (xmms_output_t *output, xmms_transition_state_t transition);
@@ -140,10 +144,15 @@ struct xmms_output_St {
 	int zero_frames;
 	int zero_frames_count;
 	
-	xmms_xtransition_t xtransition_transition;
+	xmms_xtransition_t *xtransition_transition;
 	
 	gboolean transition;
-	gboolean xtransition;
+	gint xtransition;
+	gint xtransition_running;
+	gint num_xtransitions;
+	xmms_xtransition_t xtransitions[128];
+	
+	
 	xmms_output_plugin_t *plugin;
 	gpointer plugin_data;
 
@@ -754,7 +763,7 @@ xmms_output_filler (void *arg)
 						output->switchcount = 0;
 						output->switchbuffer_seek = FALSE;
 						output->swap_buffers = TRUE;
-						output->xtransition = TRUE;
+						g_atomic_int_inc(&output->xtransition);
 						xmms_ringbuf_set_eos(output->ringbuffer, TRUE);
 						XMMS_DBG ("Switching buffers!");
 						while(g_atomic_int_get(&output->swap_buffers) == TRUE) {
@@ -860,6 +869,53 @@ xmms_output_get_prev_ringbuffer(xmms_output_t *output, xmms_ringbuf_t *ringbuf)
 
 }
 
+
+void
+xmms_output_next_xtransition(xmms_output_t *output)
+{
+
+	int z;
+
+	for (z = 0; z < output->num_xtransitions; z++) {
+
+		if (&output->xtransitions[z] == output->xtransition_transition) {
+			if (z == output->num_xtransitions - 1) {
+				output->xtransition_transition = &output->xtransitions[0];
+				XMMS_DBG ("Switched to xtransition %d", 0);
+			} else {
+				output->xtransition_transition = &output->xtransitions[z + 1];
+				XMMS_DBG ("Switched to xtransition %d", z + 1);
+			}
+			//xmms_ringbuf_set_eos(output->ringbuffers[z], FALSE);
+			break;
+		}
+		
+	}
+
+}
+
+
+void *
+xmms_output_get_prev_xtransition(xmms_output_t *output, xmms_xtransition_t *xtransition)
+{
+	int z;
+
+	for (z = 0; z < output->num_xtransitions; z++) {
+
+		if (&output->xtransitions[z] == xtransition) {
+			if (z == 0) {
+				XMMS_DBG ("Last xtransition was %d", output->num_xtransitions - 1);	
+				return &output->xtransitions[output->num_xtransitions - 1];
+			} else {
+				XMMS_DBG ("Last xtransition was %d", z - 1);	
+				return &output->xtransitions[z - 1];
+			}
+		}
+		
+	}
+
+}
+
 void
 xmms_output_get_vectors(xmms_output_t *output, xmms_output_vector_t * vectors)
 {
@@ -895,9 +951,6 @@ void
 fade_complete(xmms_output_t *output)
 {
 
-	xmms_ringbuf_t *ringbuf;
-
-
 	if (output->fader.callback != 1) {
 		xmms_output_status_set (output, output->fader.callback);
 	}
@@ -908,8 +961,6 @@ fade_complete(xmms_output_t *output)
 	
 	output->fader.current_frame_number = 0;
 	output->fader.status = INACTIVE;
-	//ringbuf = xmms_output_get_inactive_buffer(output);
-	//xmms_ringbuf_clear (ringbuf);
 	output->transition = FALSE;
 }
 
@@ -1070,17 +1121,49 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 	}
 	
 	if (output->xtransition) {		
-		output->xtransition_transition.format = output->format;
+	  // if any cross transitions at all
+	
+	
+		//if new ones
+		if (output->xtransition_running < output->xtransition) {
+		// limit of just one new one per loop!??!
 		
-		output->xtransition_transition.outring = xmms_output_get_prev_ringbuffer(output, output->ringbuffer);
-		output->xtransition_transition.inring = output->ringbuffer;
+		// move the current xtranstion to the next number
+		// is it possible to get more than one by accident?
+		xmms_output_next_xtransition(output);
 		
-		ret = crossfade_slice(&output->xtransition_transition, buffer, len);
-
-		if (output->xtransition_transition.setup == FALSE) {
-			output->xtransition = FALSE;
+		XMMS_DBG ("New transition oh yea!");
+		
+			output->xtransition_transition->format = output->format;
+			
+			// if more than one transitions going, tell the new one to read the old one
+			if (output->xtransition > 1) {
+				output->xtransition_transition->readlast = true;
+				output->xtransition_transition->last = xmms_output_get_prev_xtransition(output, output->xtransition_transition);				
+			} else {
+				output->xtransition_transition->readlast = false;
+			}
+		
+			output->xtransition_transition->outring = xmms_output_get_prev_ringbuffer(output, output->ringbuffer);
+			output->xtransition_transition->inring = output->ringbuffer;
+		
+			output->xtransition_running = output->xtransition_running + 1;
 		}
-
+	
+		XMMS_DBG ("Running %d xtransitions", output->xtransition_running );
+		// read newest
+		ret = crossfade_slice(output->xtransition_transition, buffer, len);
+		
+		//cull the old
+		int z;
+		output->xtransition_running = 0;
+		for (z = 0; z < output->num_xtransitions; z++) {
+			if (output->xtransitions[z].setup == TRUE) {
+				output->xtransition_running++;
+			}
+		}
+		
+		g_atomic_int_set(&output->xtransition, output->xtransition_running);
 
 	}
 
@@ -1743,7 +1826,8 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->tickled_when_paused = FALSE;
 	
 	output->transition = FALSE;
-	output->xtransition = FALSE;
+	output->xtransition = 0;
+	output->xtransition_running = 0;
 	output->zero_frames = 56000;
 	
 	output->j = 0;	
@@ -1758,6 +1842,9 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 
 
 	output->num_ringbuffers = 10;
+	output->num_xtransitions = 10;
+	
+	output->xtransition_transition = &output->xtransitions[0];
 	
 	int z;
 

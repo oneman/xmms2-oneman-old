@@ -49,9 +49,11 @@ typedef struct xmms_xtransition_St {
 	int lastsign[2][128];
 	//xmms_transition_state_t *transition;
 	xmms_stream_type_t *format;
-	xmms_ringbuf_t *outring;
-	xmms_ringbuf_t *inring;
-} xmms_xtransition_t;
+	xmms_ringbuf_t *outring;	// first source
+	xmms_ringbuf_t *inring;		// second source
+	gboolean readlast;
+	void *last;
+} xmms_xtransition_t; 
 
 typedef enum xmms_transition_state_E {
 	NONE,

@@ -1271,7 +1271,7 @@ xmms_xform_match (xmms_plugin_t *_plugin, gpointer user_data)
 		return TRUE;
 	}
 
-	XMMS_DBG ("Trying plugin '%s'", xmms_plugin_shortname_get (_plugin));
+	//XMMS_DBG ("Trying plugin '%s'", xmms_plugin_shortname_get (_plugin));
 	if (xmms_xform_plugin_supports (plugin, state->out_type, &priority)) {
 		XMMS_DBG ("Plugin '%s' matched (priority %d)",
 		          xmms_plugin_shortname_get (_plugin), priority);
