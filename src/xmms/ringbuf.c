@@ -727,7 +727,7 @@ xmms_ringbuf_get_write_vector (const xmms_ringbuf_t * rb,
 		vec[0].buf = &(rb->buffer[w]);
 		vec[0].len = rb->buffer_size - w;
 		vec[1].buf = rb->buffer;
-		vec[1].len = cnt2 - rb->buffer_size;
+		vec[1].len = cnt2 - rb->buffer_size_usable;
 	} else {
 		vec[0].buf = &(rb->buffer[w]);
 		vec[0].len = free_cnt;
