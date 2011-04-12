@@ -416,10 +416,13 @@ int crossfade_slice(xmms_xtransition_t *transition, void *buffer, int len) {
 		if (transition->setup == FALSE) {
 
 
-			bytes = xmms_ringbuf_bytes_used (transition->outring);
+			//bytes = xmms_ringbuf_bytes_used (transition->outring);
 
 			transition->current_frame_number = 0;
-			transition->total_frames = bytes / xmms_sample_frame_size_get(transition->format);
+			//transition->total_frames = bytes / xmms_sample_frame_size_get(transition->format);
+
+			transition->total_frames = 256000;
+
 
 			transition->setup = TRUE;
 			//XMMS_DBG ("Got %d frames for cross transition", transition->total_frames);
@@ -509,7 +512,7 @@ int crossfade_slice(xmms_xtransition_t *transition, void *buffer, int len) {
 						}
 					}
 		
-		
+			xmms_ringbuf_set_eor(transition->outring, true);
 			transition->setup = FALSE;
 			transition->readlast = FALSE;
 			XMMS_DBG ("done with cross transition");

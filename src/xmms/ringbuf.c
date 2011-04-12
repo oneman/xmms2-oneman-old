@@ -41,7 +41,7 @@ struct xmms_ringbuf_St {
 	/** Read and write index */
 	volatile guint rd_index, wr_index;
 	gboolean eos;
-
+	gboolean eor;
 	GQueue *hotspots;
 
 	GCond *free_cond, *used_cond, *eos_cond;
@@ -456,7 +456,7 @@ xmms_ringbuf_write_wait (xmms_ringbuf_t *ringbuf, gconstpointer data,
 
 	while (w < len) {
 		w += xmms_ringbuf_write (ringbuf, src + w, len - w);
-		if (w == len || ringbuf->eos) {
+		if (w == len || ringbuf->eor) {
 			break;
 		}
 
@@ -558,6 +558,35 @@ xmms_ringbuf_set_eos (xmms_ringbuf_t *ringbuf, gboolean eos)
 	if (eos) {
 		g_cond_broadcast (ringbuf->eos_cond);
 		g_cond_broadcast (ringbuf->used_cond);
+		g_cond_broadcast (ringbuf->free_cond);
+	}
+}
+
+/**
+ * Tell if the ringbuffer is done being read
+ *
+ * @returns TRUE if the ringbuffer is EORed.
+ */
+
+gboolean
+xmms_ringbuf_is_eor (const xmms_ringbuf_t *ringbuf)
+{
+	g_return_val_if_fail (ringbuf, TRUE);
+
+	return ringbuf->eor;
+}
+
+/**
+ * Set EOR flag on ringbuffer.
+ */
+void
+xmms_ringbuf_set_eor (xmms_ringbuf_t *ringbuf, gboolean eor)
+{
+	g_return_if_fail (ringbuf);
+
+	ringbuf->eor = eor;
+
+	if (eor) {
 		g_cond_broadcast (ringbuf->free_cond);
 	}
 }

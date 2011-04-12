@@ -54,6 +54,11 @@ typedef enum xmms_output_filler_message_E {
 	NOOP,		/* this is for convience */
 } xmms_output_filler_message_t, xmms_output_filler_state_t;
 
+typedef struct xmms_output_filler_autopilot_St {
+	xmms_output_t *output;
+	xmms_xform_t *chain;
+	xmms_ringbuf_t *ringbuf;
+} xmms_output_filler_autopilot_t;
 
 typedef struct xmms_volume_map_St {
 	const gchar **names;
@@ -87,6 +92,8 @@ void *xmms_output_get_next_ringbuffer (xmms_output_t *output);
 
 void *xmms_output_get_prev_xtransition (xmms_output_t *output, xmms_xtransition_t *xtransition);
 void xmms_output_next_xtransition (xmms_output_t *output);
+
+void xmms_output_next_autopilot (xmms_output_t *output);
 
 void xmms_output_buffer_swap(xmms_output_t *output);
 
@@ -151,8 +158,12 @@ struct xmms_output_St {
 	gint xtransition_running;
 	gint num_xtransitions;
 	xmms_xtransition_t xtransitions[128];
-	
-	
+		
+	xmms_output_filler_autopilot_t autopilots[128];
+	gint num_autopilots;
+	xmms_output_filler_autopilot_t *autopilot;
+	GThreadPool *autopilot_threads;
+
 	xmms_output_plugin_t *plugin;
 	gpointer plugin_data;
 
@@ -423,6 +434,63 @@ xmms_output_filler_seek (xmms_output_t *output, gint samples)
 
 }
 
+
+static void
+xmms_output_filler_autopilot_engage (xmms_output_t *output, xmms_xform_t *chain, xmms_ringbuf_t *ringbuf)
+{
+
+	output->autopilot->output = output;
+	output->autopilot->chain = chain;
+	output->autopilot->ringbuf = ringbuf;
+
+	g_thread_pool_push(output->autopilot_threads, output->autopilot, NULL);
+
+	xmms_output_next_autopilot(output);
+
+
+
+}
+
+
+static void
+xmms_output_filler_autopilot (void *arg, void *arg2)
+{
+	xmms_output_filler_autopilot_t *autopilot = (xmms_output_filler_autopilot_t *)arg;
+	char buf[autopilot->output->slice];
+	int ret, wrote;
+
+	GMutex *bsmutex;
+
+	xmms_error_t err;
+	xmms_error_reset (&err);
+	
+	bsmutex = g_mutex_new ();
+	g_mutex_lock(bsmutex);
+
+	XMMS_DBG ("Autopilot Took Off");
+
+	while (TRUE) {
+		ret = xmms_xform_this_read (autopilot->chain, buf, sizeof (buf), &err);
+		wrote = xmms_ringbuf_write_wait (autopilot->ringbuf, buf, ret, bsmutex);
+		if (wrote != ret) {
+			break;
+		}
+	}
+
+	XMMS_DBG ("Autopilot Landed");
+
+	xmms_ringbuf_set_eos(autopilot->ringbuf, false);
+	xmms_ringbuf_set_eor(autopilot->ringbuf, false);
+	xmms_ringbuf_clear(autopilot->ringbuf);
+	xmms_object_unref (autopilot->chain);	
+
+	g_mutex_unlock(bsmutex);	
+	g_mutex_free(bsmutex);
+			
+
+
+}
+
 static void
 xmms_output_filler_message (xmms_output_t *output, xmms_output_filler_message_t message)
 {
@@ -558,10 +626,11 @@ xmms_output_filler (void *arg)
 
 		if ((output->filler_state == TICKLE) || (output->filler_state == TICKLESEEK)){
 			if (chain) {
-				xmms_object_unref (chain);
+				xmms_output_filler_autopilot_engage(output, chain, output->ringbuffer);
+				//xmms_object_unref (chain);
 				chain = NULL;
 				output->new_internal_filler_state = RUN;
-				XMMS_DBG ("Chain destroyed");
+				XMMS_DBG ("Chain autopilot engaged");
 
 			// switchbuffer jump
 				if (output->status == 1) {
@@ -863,6 +932,31 @@ xmms_output_get_prev_ringbuffer(xmms_output_t *output, xmms_ringbuf_t *ringbuf)
 				XMMS_DBG ("Last Ringbuf was %d", z - 1);	
 				return output->ringbuffers[z - 1];
 			}
+		}
+		
+	}
+
+}
+
+
+void
+xmms_output_next_autopilot(xmms_output_t *output)
+{
+
+	int z;
+
+	for (z = 0; z < output->num_autopilots; z++) {
+
+		if (&output->autopilots[z] == output->autopilot) {
+			if (z == output->num_autopilots - 1) {
+				output->autopilot = &output->autopilots[0];
+				XMMS_DBG ("Switched to autopilot %d", 0);
+			} else {
+				output->autopilot = &output->autopilots[z + 1];
+				XMMS_DBG ("Switched to autopilot %d", z + 1);
+			}
+			//xmms_ringbuf_set_eos(output->ringbuffers[z], FALSE);
+			break;
 		}
 		
 	}
@@ -1705,6 +1799,7 @@ xmms_output_destroy (xmms_object_t *object)
 	xmms_output_filler_message (output, QUIT);
 	g_thread_join (output->filler_thread);
 
+	g_thread_pool_free (output->autopilot_threads, TRUE, TRUE);
 
 	if (output->plugin) {
 		xmms_output_plugin_method_destroy (output->plugin, output);
@@ -1821,6 +1916,8 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->filler_mutex = g_mutex_new ();
 	g_mutex_lock (output->filler_mutex); /* because it has to be locked or unlocked to be freed */
 
+	output->autopilot_threads = g_thread_pool_new(xmms_output_filler_autopilot, NULL, 10, TRUE, NULL);
+
 	output->filler_state = STOP;
 	output->slice = 4096;
 	output->tickled_when_paused = FALSE;
@@ -1844,6 +1941,10 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->num_ringbuffers = 10;
 	output->num_xtransitions = 10;
 	
+	output->num_autopilots = 10;
+
+	output->autopilot = &output->autopilots[0];
+
 	output->xtransition_transition = &output->xtransitions[0];
 	
 	int z;
