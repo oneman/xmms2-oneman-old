@@ -456,24 +456,27 @@ static void
 xmms_output_filler_autopilot (void *arg, void *arg2)
 {
 	xmms_output_filler_autopilot_t *autopilot = (xmms_output_filler_autopilot_t *)arg;
-	char buf[autopilot->output->slice];
-	int ret, wrote;
-
-	GMutex *bsmutex;
-
+	xmms_ringbuf_vector_t write_vector[2];
+	int ret, len;
+	GMutex *amutex;
 	xmms_error_t err;
 	xmms_error_reset (&err);
 	
-	bsmutex = g_mutex_new ();
-	g_mutex_lock(bsmutex);
+	amutex = g_mutex_new ();
+	g_mutex_lock(amutex);
 
 	XMMS_DBG ("Autopilot Took Off");
 
 	while (TRUE) {
-		ret = xmms_xform_this_read (autopilot->chain, buf, sizeof (buf), &err);
-		wrote = xmms_ringbuf_write_wait (autopilot->ringbuf, buf, ret, bsmutex);
-		if (wrote != ret) {
+		xmms_ringbuf_get_write_vector(autopilot->ringbuf, &write_vector[0]);
+		len = MIN(autopilot->output->slice, write_vector[0].len);
+		ret = xmms_xform_this_read (autopilot->chain, write_vector[0].buf, len, &err);
+		if ((len != ret) || (xmms_ringbuf_is_eor(autopilot->ringbuf))) {
 			break;
+		}
+		xmms_ringbuf_write_advance(autopilot->ringbuf, ret);
+		if (xmms_ringbuf_bytes_free(autopilot->ringbuf) < autopilot->output->slice) {
+			xmms_ringbuf_wait_free (autopilot->ringbuf, autopilot->output->slice, amutex);
 		}
 	}
 
@@ -484,8 +487,8 @@ xmms_output_filler_autopilot (void *arg, void *arg2)
 	xmms_ringbuf_clear(autopilot->ringbuf);
 	xmms_object_unref (autopilot->chain);	
 
-	g_mutex_unlock(bsmutex);	
-	g_mutex_free(bsmutex);
+	g_mutex_unlock(amutex);	
+	g_mutex_free(amutex);
 			
 
 
@@ -572,11 +575,10 @@ xmms_output_filler (void *arg)
 {
 	xmms_output_t *output = (xmms_output_t *)arg;
 	xmms_xform_t *chain = NULL;
-	char buf[output->slice];
 	xmms_error_t err;
-	gint ret;
+	gint len, ret;
 
-	xmms_ringbuf_vector_t ringbuf_write_vectors[2];
+	xmms_ringbuf_vector_t write_vector[2];
 
 	xmms_error_reset (&err);
 
@@ -793,37 +795,30 @@ xmms_output_filler (void *arg)
 
 		/* Running State and we have a chain */
 
-		ret = xmms_xform_this_read (chain, buf, sizeof (buf), &err);
-		if (ret > 0) {
-			int wrote;
-			wrote = 0;
 
-			gint skip = MIN (ret, output->toskip);
-			if (skip > 0) {
-				XMMS_DBG ("Skip Num Bytes from seek was: %d", skip );
-			}
+
+		if(output->switchbuffer_seek == TRUE) {
+			xmms_ringbuf_get_write_vector(output->next_ringbuffer, &write_vector[0]); 
+		} else {
+			xmms_ringbuf_get_write_vector(output->ringbuffer, &write_vector[0]); 
+		}
+
+		len = MIN(output->slice, write_vector[0].len);
+
+		gint skip = MIN (len, output->toskip);
+		if (skip > 0) {
+			XMMS_DBG ("Skip Num Bytes from seek was: %d", skip );
 			output->toskip -= skip;
+			//why cant we just shitcan it some other way?
+			xmms_xform_this_read (chain, write_vector[0].buf, skip, &err);
+		}
 
-			if (ret > skip) {
-				if(output->switchbuffer_seek == TRUE) {
-					wrote = xmms_ringbuf_write (output->next_ringbuffer, buf + skip, ret - skip);
-				} else {
-					wrote = xmms_ringbuf_write (output->ringbuffer, buf + skip, ret - skip);
-				}
-				
-				while (wrote < (ret - skip)) {
-					xmms_output_filler_wait_for_message_or_space(output);
-					if (output->filler_state != RUN) {
-						break;
-					}
-					wrote += xmms_ringbuf_write (output->ringbuffer, buf + skip + wrote, ret - skip - wrote);
-				}
-				if (output->filler_state != RUN) {
-					XMMS_DBG ("State changed while waiting... %d", output->filler_state );
-					continue;
-				}
+		ret = xmms_xform_this_read (chain, write_vector[0].buf, len, &err);
 
-				if (output->switchbuffer_seek == TRUE) {
+		if (ret > 0) {
+		
+			if (output->switchbuffer_seek == TRUE) {
+				xmms_ringbuf_write_advance(output->next_ringbuffer, ret);
 					output->switchcount++;
 					if (output->switchcount < 5) {
 						output->new_internal_filler_state = RUN;
@@ -841,6 +836,16 @@ xmms_output_filler (void *arg)
 							XMMS_DBG ("ZzZzz");
 						}
 					}
+			} else {
+				xmms_ringbuf_write_advance(output->ringbuffer, ret); 
+				
+				if (xmms_ringbuf_bytes_free(output->ringbuffer) < output->slice) {
+					xmms_output_filler_wait_for_message_or_space(output);
+				}
+		
+				if (output->filler_state != RUN) {
+					XMMS_DBG ("State changed while waiting... %d", output->filler_state );
+					continue;
 				}
 			}
 
