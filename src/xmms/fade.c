@@ -441,10 +441,6 @@ int crossfade_slice(xmms_xtransition_t *transition, void *buffer, int len) {
 			//ret = xmms_ringbuf_read (transition->outring, &oldbuffer, clen);
 			//XMMS_DBG ("got old %d " , ret);
 			
-
-			
-
-			
 			if (( ret < clen ) && (oldtrans->setup == false)) {
 			
 						XMMS_DBG ("old transition did finish, switching to ring, needed %d more", clen - ret);

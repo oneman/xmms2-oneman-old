@@ -832,6 +832,9 @@ xmms_output_filler (void *arg)
 						g_atomic_int_inc(&output->new_xtransition);
 						//xmms_ringbuf_set_eos(output->ringbuffer, TRUE);
 						XMMS_DBG ("Switching buffers!");
+						// incase we get a tickle before we have the next chain
+						output->new_internal_filler_state = RUN;
+						continue;
 
 					}
 			} else {
@@ -1102,7 +1105,6 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 			resetstatetemp = TRUE;
 			break;
 		case SWAP:
-			output->reading_ringbuffer = xmms_output_get_next_ringbuffer(output, output->reading_ringbuffer);
 			g_atomic_int_inc(&output->xtransition);
 			break;
 			
@@ -1110,16 +1112,16 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 		
 		
 		if (resetstatetemp == TRUE) {
-		if ((output->fader.current_frame_number > output->fader.total_frames) || (output->fader.current_frame_number == 0)){
-			output->fader.current_frame_number = 0;
-			output->rolldata->resdata.end_of_input = 0;
-		} else {
-			output->fader.current_frame_number = output->fader.total_frames - output->fader.current_frame_number;
-		}
+			if ((output->fader.current_frame_number > output->fader.total_frames) || (output->fader.current_frame_number == 0)){
+				output->fader.current_frame_number = 0;
+				output->rolldata->resdata.end_of_input = 0;
+			} else {
+				output->fader.current_frame_number = output->fader.total_frames - output->fader.current_frame_number;
+			}
 		
-		if (output->zero_frames_count > 0) {
-			output->zero_frames_count = 0;
-		}
+			if (output->zero_frames_count > 0) {
+				output->zero_frames_count = 0;
+			}
 		}
 		
 		message = xmms_playback_status_check_for_message(output);
@@ -1221,13 +1223,13 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 				output->xtransition_transition->format = output->format;
 				
 				// if more than one transitions going, tell the new one to read the old one
-				if (output->xtransition > 1) {
+				if (output->xtransition_running > 0) {
 					output->xtransition_transition->readlast = true;
 					output->xtransition_transition->last = xmms_output_get_prev_xtransition(output, output->xtransition_transition);				
 				} else {
 					output->xtransition_transition->readlast = false;
 				}
-		
+				output->reading_ringbuffer = xmms_output_get_next_ringbuffer(output, output->reading_ringbuffer);
 				output->xtransition_transition->outring = xmms_output_get_prev_ringbuffer(output, output->reading_ringbuffer);
 				output->xtransition_transition->inring = output->reading_ringbuffer;
 			
@@ -1389,7 +1391,7 @@ xmms_playback_client_seeksamples (xmms_output_t *output, gint32 samples, gint32 
 	}
 
 	//if (whence == XMMS_PLAYBACK_SEEK_TICKLE) {
-	if (TRUE) {
+	if (FALSE) {
 		xmms_output_filler_tickle_seek (output, samples);
 	
 	} else {
