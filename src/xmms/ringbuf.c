@@ -479,7 +479,7 @@ xmms_ringbuf_wait_free (const xmms_ringbuf_t *ringbuf, guint len, GMutex *mtx)
 
 	GTimeVal wait_time;
 
-	while ((xmms_ringbuf_bytes_free (ringbuf) < len) && !ringbuf->eos) {
+	while ((xmms_ringbuf_bytes_free (ringbuf) < len) && !ringbuf->eor) {
 		g_get_current_time (&wait_time);
 		g_time_val_add (&wait_time, 30000);
 		g_cond_timed_wait (ringbuf->free_cond, mtx, &wait_time);
@@ -643,6 +643,7 @@ void
 xmms_ringbuf_write_advance (xmms_ringbuf_t * ringbuf, gint cnt)
 {
 	ringbuf->wr_index = (ringbuf->wr_index + cnt) % ringbuf->buffer_size;
+	g_cond_broadcast (ringbuf->used_cond);
 }
 
 /* The non-copying data reader.  `vec' is an array of two places.  Set
@@ -724,14 +725,14 @@ xmms_ringbuf_get_write_vector (const xmms_ringbuf_t * rb,
 		/* Two part vector: the rest of the buffer after the current write
 		   ptr, plus some from the start of the buffer. */
 
-		vec[0].buf = &(rb->buffer[w]);
+		vec[0].buf = rb->buffer + w;
 		vec[0].len = rb->buffer_size - w;
-		vec[1].buf = rb->buffer;
-		vec[1].len = cnt2 - rb->buffer_size_usable;
+		//vec[1].buf = rb->buffer;
+		//vec[1].len = cnt2 - rb->buffer_size;
 	} else {
-		vec[0].buf = &(rb->buffer[w]);
+		vec[0].buf = rb->buffer + w;
 		vec[0].len = free_cnt;
-		vec[1].len = 0;
+		//vec[1].len = 0;
 	}
 }
 

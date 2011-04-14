@@ -1943,10 +1943,10 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->playback_messages = xmms_ringbuf_new (size);
 
 
-	output->num_ringbuffers = 10;
-	output->num_xtransitions = 10;
+	output->num_ringbuffers = 50;
+	output->num_xtransitions = 50;
 	
-	output->num_autopilots = 10;
+	output->num_autopilots = 50;
 
 	output->autopilot = &output->autopilots[0];
 
