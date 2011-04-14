@@ -1392,11 +1392,11 @@ xmms_playback_client_seeksamples (xmms_output_t *output, gint32 samples, gint32 
 
 	//if (whence == XMMS_PLAYBACK_SEEK_TICKLE) {
 	if (FALSE) {
-		xmms_output_filler_tickle_seek (output, samples);
+		//xmms_output_filler_tickle_seek (output, samples);
 	
 	} else {
 	
-		xmms_output_filler_seek (output, samples);
+		//xmms_output_filler_seek (output, samples);
 		
 	}
 
