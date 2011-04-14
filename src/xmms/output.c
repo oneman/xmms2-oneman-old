@@ -87,15 +87,12 @@ static void fade_complete (xmms_output_t *output);
 
 gint xmms_transition_read (xmms_output_t *output, char *buffer, gint len);
 gint xmms_output_zero (xmms_output_t *output, char *buffer, gint len);
-void *xmms_output_get_prev_ringbuffer (xmms_output_t *output, xmms_ringbuf_t *ringbuf);
-void *xmms_output_get_next_ringbuffer (xmms_output_t *output);
 
+void *xmms_output_get_prev_ringbuffer (xmms_output_t *output, xmms_ringbuf_t *ringbuf);
+void *xmms_output_get_next_ringbuffer (xmms_output_t *output, xmms_ringbuf_t *ringbuf);
 void *xmms_output_get_prev_xtransition (xmms_output_t *output, xmms_xtransition_t *xtransition);
 void xmms_output_next_xtransition (xmms_output_t *output);
-
 void xmms_output_next_autopilot (xmms_output_t *output);
-
-void xmms_output_buffer_swap(xmms_output_t *output);
 
 static gboolean xmms_output_transition_set (xmms_output_t *output, xmms_transition_state_t transition);
 static void xmms_playback_status_message (xmms_output_t *output, xmms_transition_state_t message);
@@ -147,9 +144,11 @@ struct xmms_output_St {
 	xmms_roll_data_t *rolldata;
 	
 	gfloat j;
-	
+	gint max;
 	int zero_frames;
 	int zero_frames_count;
+	
+	gint swap_buffers_temp;
 	
 	xmms_xtransition_t *xtransition_transition;
 	
@@ -184,13 +183,13 @@ struct xmms_output_St {
 	xmms_output_filler_state_t filler_state;
 	xmms_output_filler_state_t new_internal_filler_state;
 
-	xmms_ringbuf_t *ringbuffer;
+	xmms_ringbuf_t *filling_ringbuffer;
+	xmms_ringbuf_t *reading_ringbuffer;
 	xmms_ringbuf_t *ringbuffers[128];
 	gint num_ringbuffers;
 	xmms_ringbuf_t *next_ringbuffer;
 	
 	gboolean switchbuffer_seek;
-	int swap_buffers;
 	gint switchcount;
 
 	guint32 filler_seek;
@@ -559,7 +558,7 @@ xmms_output_filler_wait_for_message_or_space(xmms_output_t *output) {
 			}
 			
 		} else {
-			free_bytes = xmms_ringbuf_bytes_free(output->ringbuffer);
+			free_bytes = xmms_ringbuf_bytes_free(output->filling_ringbuffer);
 			if(free_bytes >= output->slice){
 				output->filler_state = RUN;
 				return output->filler_state;
@@ -609,8 +608,8 @@ xmms_output_filler (void *arg)
 			}
 			/* remember, nothing is actually cleared, the read/write pointers are just set to zero, so if something is still reading at this moment
 			   things will be ok */
-			xmms_ringbuf_clear (output->ringbuffer);
-			xmms_ringbuf_set_eos (output->ringbuffer, FALSE); 
+			xmms_ringbuf_clear (output->filling_ringbuffer);
+			xmms_ringbuf_set_eos (output->filling_ringbuffer, FALSE); 
 			XMMS_DBG ("Output filler stopped and waiting..." );
 			while(output->filler_state == STOP) {
 				xmms_output_filler_wait_for_message(output);
@@ -628,7 +627,7 @@ xmms_output_filler (void *arg)
 
 		if ((output->filler_state == TICKLE) || (output->filler_state == TICKLESEEK)){
 			if (chain) {
-				xmms_output_filler_autopilot_engage(output, chain, output->ringbuffer);
+				xmms_output_filler_autopilot_engage(output, chain, output->filling_ringbuffer);
 				//xmms_object_unref (chain);
 				chain = NULL;
 				output->new_internal_filler_state = RUN;
@@ -637,7 +636,7 @@ xmms_output_filler (void *arg)
 			// switchbuffer jump
 				if (output->status == 1) {
 					output->switchbuffer_seek = TRUE;
-					output->next_ringbuffer = (xmms_ringbuf_t *)xmms_output_get_next_ringbuffer(output);
+					output->next_ringbuffer = (xmms_ringbuf_t *)xmms_output_get_next_ringbuffer(output, output->filling_ringbuffer);
 				}
 			} else {
 				XMMS_DBG ("Filler Kill without chain requested, going to stop mode");
@@ -646,7 +645,7 @@ xmms_output_filler (void *arg)
 
 			if (output->status == 2) {
 				output->tickled_when_paused = TRUE;
-				xmms_ringbuf_clear (output->ringbuffer);
+				xmms_ringbuf_clear (output->filling_ringbuffer);
 				//g_atomic_int_set(&output->played, 0);
 				//update_playtime (output, 0);
 			}
@@ -691,7 +690,7 @@ xmms_output_filler (void *arg)
 					// to ensure we dont end up with a series of seeks, we clear the ringbuf
 					// set the song changed hotspot again, and then set a seek hotspot
 					// we also update the playtime tho it will flux momentarily when the songplayed hotspot kicks
-					xmms_ringbuf_clear (output->ringbuffer);
+					xmms_ringbuf_clear (output->filling_ringbuffer);
 					hsarg = g_new0 (xmms_output_song_changed_arg_t, 1);
 					hsarg->output = output;
 					hsarg->chain = chain;
@@ -700,11 +699,11 @@ xmms_output_filler (void *arg)
 					xmms_object_ref (chain);
 					g_atomic_int_set(&output->played, output->filler_seek * xmms_sample_frame_size_get (output->format));
 					update_playtime (output, 0);
-					xmms_ringbuf_hotspot_set (output->ringbuffer, song_changed, song_changed_arg_free, hsarg);
-					xmms_ringbuf_hotspot_set (output->ringbuffer, seek_done, NULL, output);
+					xmms_ringbuf_hotspot_set (output->filling_ringbuffer, song_changed, song_changed_arg_free, hsarg);
+					xmms_ringbuf_hotspot_set (output->filling_ringbuffer, seek_done, NULL, output);
 
 					} else {
-						xmms_ringbuf_clear (output->ringbuffer);
+						xmms_ringbuf_clear (output->filling_ringbuffer);
 						// We dont want to nuke any song changed callbacks incase we have changed songs
 						// if there was a seek callback waiting (unlikely) well thats going to be wierd
 						// the song changed callback will unset our playtime momentarily when it hits
@@ -719,7 +718,7 @@ xmms_output_filler (void *arg)
 					output->switchbuffer_seek = TRUE;
 					
 					if (output->filler_state == SEEK) {
-						output->next_ringbuffer = (xmms_ringbuf_t *)xmms_output_get_next_ringbuffer(output);
+						output->next_ringbuffer = (xmms_ringbuf_t *)xmms_output_get_next_ringbuffer(output, output->filling_ringbuffer);
 					}
 					output->toskip = output->filler_skip * xmms_sample_frame_size_get (output->format);
 					xmms_ringbuf_hotspot_set (output->next_ringbuffer, seek_done_noskip, NULL, output);
@@ -755,7 +754,7 @@ xmms_output_filler (void *arg)
 
 				if (!xmms_playlist_advance (output->playlist)) {
 					XMMS_DBG ("End of playlist");
-					xmms_ringbuf_set_eos (output->ringbuffer, TRUE); 
+					xmms_ringbuf_set_eos (output->filling_ringbuffer, TRUE); 
 				}
 				continue;
 			}
@@ -783,7 +782,7 @@ xmms_output_filler (void *arg)
 			if(output->switchbuffer_seek == TRUE) {
 				xmms_ringbuf_hotspot_set (output->next_ringbuffer, song_changed, song_changed_arg_free, hsarg);
 			} else {
-				xmms_ringbuf_hotspot_set (output->ringbuffer, song_changed, song_changed_arg_free, hsarg);
+				xmms_ringbuf_hotspot_set (output->filling_ringbuffer, song_changed, song_changed_arg_free, hsarg);
 			}
 		}
 		
@@ -800,7 +799,7 @@ xmms_output_filler (void *arg)
 		if(output->switchbuffer_seek == TRUE) {
 			xmms_ringbuf_get_write_vector(output->next_ringbuffer, &write_vector[0]); 
 		} else {
-			xmms_ringbuf_get_write_vector(output->ringbuffer, &write_vector[0]); 
+			xmms_ringbuf_get_write_vector(output->filling_ringbuffer, &write_vector[0]); 
 		}
 
 		len = MIN(output->slice, write_vector[0].len);
@@ -826,20 +825,18 @@ xmms_output_filler (void *arg)
 					} else {
 						output->switchcount = 0;
 						output->switchbuffer_seek = FALSE;
-						output->swap_buffers = TRUE;
-						g_atomic_int_inc(&output->xtransition);
-						xmms_ringbuf_set_eos(output->ringbuffer, TRUE);
+						output->swap_buffers_temp = TRUE;
+
+						xmms_playback_status_message(output, SWAP);
+						output->filling_ringbuffer = xmms_output_get_next_ringbuffer(output, output->filling_ringbuffer);
+						//xmms_ringbuf_set_eos(output->ringbuffer, TRUE);
 						XMMS_DBG ("Switching buffers!");
-						while(g_atomic_int_get(&output->swap_buffers) == TRUE) {
-							/* Wait for a message instead of spinning ?  */
-							g_usleep(12000);
-							XMMS_DBG ("ZzZzz");
-						}
+
 					}
 			} else {
-				xmms_ringbuf_write_advance(output->ringbuffer, ret); 
+				xmms_ringbuf_write_advance(output->filling_ringbuffer, ret); 
 				
-				if (xmms_ringbuf_bytes_free(output->ringbuffer) < output->slice) {
+				if (xmms_ringbuf_bytes_free(output->filling_ringbuffer) < output->slice) {
 					xmms_output_filler_wait_for_message_or_space(output);
 				}
 		
@@ -862,7 +859,7 @@ xmms_output_filler (void *arg)
 			/* A natural track progression or we have hit the end of the playlist */
 			if (!xmms_playlist_advance (output->playlist)) {
 				XMMS_DBG ("End of playlist");
-				xmms_ringbuf_set_eos (output->ringbuffer, TRUE);
+				xmms_ringbuf_set_eos (output->filling_ringbuffer, TRUE);
 			}
 		}
 
@@ -874,45 +871,19 @@ xmms_output_filler (void *arg)
 	return NULL;
 }
 
-void
-xmms_output_buffer_swap(xmms_output_t *output)
-{
-
-	int z;
-
-	for (z = 0; z < output->num_ringbuffers; z++) {
-
-		if (output->ringbuffers[z] == output->ringbuffer) {
-			if (z == output->num_ringbuffers - 1) {
-				output->ringbuffer = output->ringbuffers[0];
-				XMMS_DBG ("Switched to Ringbuffer %d", 0);
-			} else {
-				output->ringbuffer = output->ringbuffers[z + 1];
-				XMMS_DBG ("Switched to Ringbuffer %d", z + 1);
-			}
-			xmms_ringbuf_set_eos(output->ringbuffers[z], FALSE);
-			break;
-		}
-		
-	}
-	
-	g_atomic_int_set(&output->swap_buffers, 0);
-
-}
-
 void *
-xmms_output_get_next_ringbuffer(xmms_output_t *output)
+xmms_output_get_next_ringbuffer(xmms_output_t *output, xmms_ringbuf_t *ringbuf)
 {
 	int z;
 
 	for (z = 0; z < output->num_ringbuffers; z++) {
 
-		if (output->ringbuffers[z] == output->ringbuffer) {
+		if (output->ringbuffers[z] == ringbuf) {
 			if (z == output->num_ringbuffers - 1) {
-				XMMS_DBG ("Next Ringbuf is %d", 0);
+				XMMS_DBG ("next Ringbuf is %d", 0);	
 				return output->ringbuffers[0];
 			} else {
-				XMMS_DBG ("Next Ringbuf is %d", z + 1);
+				XMMS_DBG ("next Ringbuf is %d", z + 1);	
 				return output->ringbuffers[z + 1];
 			}
 		}
@@ -1018,32 +989,32 @@ xmms_output_get_prev_xtransition(xmms_output_t *output, xmms_xtransition_t *xtra
 void
 xmms_output_get_vectors(xmms_output_t *output, xmms_output_vector_t * vectors)
 {
-	xmms_ringbuf_get_read_vector (output->ringbuffer, (xmms_ringbuf_vector_t *) vectors);
+	xmms_ringbuf_get_read_vector (output->reading_ringbuffer, (xmms_ringbuf_vector_t *) vectors);
 }
 
 void
 xmms_output_advance(xmms_output_t *output, gint cnt)
 {
-	xmms_ringbuf_read_advance(output->ringbuffer, cnt);
+	xmms_ringbuf_read_advance(output->reading_ringbuffer, cnt);
 	update_playtime (output, cnt);
 }
 
 gint
 xmms_output_get_next_hotspot_pos(xmms_output_t *output)
 {
-	return xmms_ringbuf_get_next_hotspot_pos (output->ringbuffer);
+	return xmms_ringbuf_get_next_hotspot_pos (output->reading_ringbuffer);
 }
 
 gint
 xmms_output_get_ringbuf_pos(xmms_output_t *output)
 {
-	return xmms_ringbuf_get_read_pos (output->ringbuffer);
+	return xmms_ringbuf_get_read_pos (output->reading_ringbuffer);
 }
 
 void
 xmms_output_hit_hotspot(xmms_output_t *output)
 {
-	xmms_ringbuf_hit_hotspot (output->ringbuffer);
+	xmms_ringbuf_hit_hotspot (output->reading_ringbuffer);
 }
 
 void
@@ -1098,30 +1069,46 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 	
 	int message;
 	
+	int resetstatetemp;
+
+	
 	message = xmms_playback_status_check_for_message(output);
 	
 	while (message > 0) {
+
+		resetstatetemp = FALSE;
 	
 		switch (message) {
 		case PAUSING:
 			output->fader.callback = 2;
 			output->fader.status = FADING_OUT;
+			resetstatetemp = TRUE;
 			break;
 		case RESUMING:
 			output->fader.callback = 1;
 			output->fader.status = FADING_IN;
+			resetstatetemp = TRUE;
 			break;
 		case STARTING:
 			output->fader.callback = 1;
 			output->fader.status = FADING_IN;
+			resetstatetemp = TRUE;
 			break;
 		case STOPPING:
 			output->fader.status = FADING_OUT;
 			output->fader.callback = 0;
+			resetstatetemp = TRUE;
+			break;
+		case SWAP:
+			output->reading_ringbuffer = xmms_output_get_next_ringbuffer(output, output->reading_ringbuffer);
+			g_atomic_int_inc(&output->xtransition);
+			output->swap_buffers_temp = FALSE;
 			break;
 			
 		}
 		
+		
+		if (resetstatetemp == TRUE) {
 		if ((output->fader.current_frame_number > output->fader.total_frames) || (output->fader.current_frame_number == 0)){
 			output->fader.current_frame_number = 0;
 			output->rolldata->resdata.end_of_input = 0;
@@ -1132,7 +1119,8 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 		if (output->zero_frames_count > 0) {
 			output->zero_frames_count = 0;
 		}
-	
+		}
+		
 		message = xmms_playback_status_check_for_message(output);
 		
 	}
@@ -1142,10 +1130,6 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 		return xmms_output_zero (output, buffer, len);
 	}
 
-
-	if (output->swap_buffers) {
-		xmms_output_buffer_swap(output);
-	}
 				
 	if (output->fader.status) {
 
@@ -1172,12 +1156,12 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 		ret2 = 0;
 		if(output->fader.current_frame_number <= (output->fader.total_frames - 1524)) {
 		while (ret != len )
-			ret += xmms_roll_read (output->rolldata, output->ringbuffer, buffer + ret, len - ret, 0);			
+			ret += xmms_roll_read (output->rolldata, output->reading_ringbuffer, buffer + ret, len - ret, 0);			
 		} else {
 
 			output->rolldata->resdata.src_ratio = 1;
 
-			ret2 = xmms_roll_read (output->rolldata, output->ringbuffer, buffer + ret, len - ret, 1);
+			ret2 = xmms_roll_read (output->rolldata, output->reading_ringbuffer, buffer + ret, len - ret, 1);
 			XMMS_DBG ("ret2 %d", ret2 );
 			ret = ret + ret2;
 
@@ -1191,7 +1175,7 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 
 			if (ret < len) {
 				XMMS_DBG ("needed %d more", len - ret );
-				ret += xmms_ringbuf_read (output->ringbuffer, buffer + ret, len - ret);
+				ret += xmms_ringbuf_read (output->reading_ringbuffer, buffer + ret, len - ret);
 			}
 
 		}
@@ -1243,8 +1227,8 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 				output->xtransition_transition->readlast = false;
 			}
 		
-			output->xtransition_transition->outring = xmms_output_get_prev_ringbuffer(output, output->ringbuffer);
-			output->xtransition_transition->inring = output->ringbuffer;
+			output->xtransition_transition->outring = xmms_output_get_prev_ringbuffer(output, output->reading_ringbuffer);
+			output->xtransition_transition->inring = output->reading_ringbuffer;
 		
 			output->xtransition_running = output->xtransition_running + 1;
 		}
@@ -1281,18 +1265,15 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 	g_return_val_if_fail (output, -1);
 	g_return_val_if_fail (buffer, -1);
 
+	/* Handle no transition buffer swap here? */
 
-	if (output->swap_buffers) {
-		/* Handle no transition buffer swap here? */
-	}
-
-	if ((output->transition) || (output->xtransition)) {
+	if ((output->transition) || (output->xtransition) || (output->swap_buffers_temp)) {
 		ret = xmms_transition_read (output, buffer, len);
 	} else {
-		ret = xmms_ringbuf_read (output->ringbuffer, buffer, len);
+		ret = xmms_ringbuf_read (output->reading_ringbuffer, buffer, len);
 	}
 	
-	if (ret == 0 && xmms_ringbuf_iseos (output->ringbuffer)) {
+	if (ret == 0 && xmms_ringbuf_iseos (output->reading_ringbuffer)) {
 		xmms_output_filler_message (output, STOP);
 		xmms_output_status_set (output, XMMS_PLAYBACK_STATUS_STOP);
 		return -1;
@@ -1306,7 +1287,7 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 gint
 xmms_output_read_wait (xmms_output_t *output, char *buffer, gint len)
 {
-	xmms_ringbuf_wait_used (output->ringbuffer, len, output->read_mutex);
+	xmms_ringbuf_wait_used (output->reading_ringbuffer, len, output->read_mutex);
 	return xmms_output_read (output, buffer, len);
 }
 
@@ -1316,11 +1297,11 @@ guint
 xmms_output_bytes_available (xmms_output_t *output)
 {
 
-	if (output->swap_buffers) {
-		xmms_output_buffer_swap(output);
+	if (output->swap_buffers_temp) {
+		return xmms_ringbuf_bytes_used(output->filling_ringbuffer);
 	}
 
-	return xmms_ringbuf_bytes_used(output->ringbuffer);
+	return xmms_ringbuf_bytes_used(output->reading_ringbuffer);
 }
 
 xmms_config_property_t *
@@ -1337,6 +1318,8 @@ xmms_output_config_lookup (xmms_output_t *output, const gchar *path)
 	return xmms_plugin_config_lookup ((xmms_plugin_t *)output->plugin, path);
 }
 
+
+/* this is only used by ices output, hacky == probably */
 xmms_medialib_entry_t
 xmms_output_current_id (xmms_output_t *output)
 {
@@ -1733,7 +1716,7 @@ xmms_output_latency (xmms_output_t *output)
 
 	if (output->format) {
 		/* data already waiting in the ringbuffer */
-		buffersize += xmms_ringbuf_bytes_used (output->ringbuffer);
+		buffersize += xmms_ringbuf_bytes_used (output->reading_ringbuffer);
 
 		/* latency of the soundcard */
 		buffersize += xmms_output_plugin_method_latency_get (output->plugin, output);
@@ -1905,6 +1888,8 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 
 	output = xmms_object_new (xmms_output_t, xmms_output_destroy);
 
+	output->max = 50;	
+
 	output->playlist = playlist;
 
 	output->status_mutex = g_mutex_new ();
@@ -1921,7 +1906,7 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->filler_mutex = g_mutex_new ();
 	g_mutex_lock (output->filler_mutex); /* because it has to be locked or unlocked to be freed */
 
-	output->autopilot_threads = g_thread_pool_new(xmms_output_filler_autopilot, NULL, 10, TRUE, NULL);
+	output->autopilot_threads = g_thread_pool_new(xmms_output_filler_autopilot, NULL, output->max, TRUE, NULL);
 
 	output->filler_state = STOP;
 	output->slice = 4096;
@@ -1942,11 +1927,12 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 
 	output->playback_messages = xmms_ringbuf_new (size);
 
+	output->swap_buffers_temp = FALSE;
 
-	output->num_ringbuffers = 50;
-	output->num_xtransitions = 50;
+	output->num_ringbuffers = output->max;
+	output->num_xtransitions = output->max;
 	
-	output->num_autopilots = 50;
+	output->num_autopilots = output->max;
 
 	output->autopilot = &output->autopilots[0];
 
@@ -1958,8 +1944,8 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 		output->ringbuffers[z] = xmms_ringbuf_new (size);
 	}
 
-	output->ringbuffer = output->ringbuffers[0];
-	
+	output->filling_ringbuffer = output->ringbuffers[0];
+	output->reading_ringbuffer = output->ringbuffers[0];
 	output->switchbuffer_seek = FALSE;
 	output->switchcount = 0;
 	
@@ -1967,7 +1953,7 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->fader.total_frames = 100000;
 	
 	output->switchbuffer_seek = FALSE;
-	output->swap_buffers = FALSE;
+
 
 	output->filler_thread = g_thread_create (xmms_output_filler, output, TRUE, NULL);
 

@@ -64,6 +64,7 @@ typedef enum xmms_transition_state_E {
 	SEEKING,
 	ADVANCING,
 	JUMPING,
+	SWAP,
 } xmms_transition_state_t;
 
 int find_final_zero_crossing (void *buffer, int len);
