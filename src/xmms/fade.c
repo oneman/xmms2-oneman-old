@@ -409,9 +409,11 @@ int crossfade_slice(xmms_xtransition_t *transition, void *buffer, int len) {
 
 			//XMMS_DBG ("cossfade called with %d", len);
 			xmms_xtransition_t *oldtrans;
+			oldtrans = (xmms_xtransition_t *)transition->last;
+			
 	int bytes, ret, clen;
 		
-		guint8 oldbuffer[32000];
+		guint8 oldbuffer[8192];
 
 		if (transition->setup == FALSE) {
 
@@ -435,13 +437,13 @@ int crossfade_slice(xmms_xtransition_t *transition, void *buffer, int len) {
 		// ok so if we are readin old we read old
 		if (transition->readlast) {
 			//XMMS_DBG ("reading old in the old way");
-			ret = crossfade_slice(transition->last, &oldbuffer, clen);
+			ret = crossfade_slice(oldtrans, &oldbuffer, clen);
 			//ret = xmms_ringbuf_read (transition->outring, &oldbuffer, clen);
 			//XMMS_DBG ("got old %d " , ret);
 			
 
 			
-			oldtrans = (xmms_xtransition_t *)transition->last;
+
 			
 			if (( ret < clen ) && (oldtrans->setup == false)) {
 			
