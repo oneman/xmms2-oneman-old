@@ -594,7 +594,9 @@ xmms_output_filler (void *arg)
 		} else {
 			if(xmms_output_filler_check_for_message(output) != NOOP) {
 				XMMS_DBG ("Output Filler Received New State: %d", output->filler_state );
-				continue;
+				if (output->filler_state == QUIT) {
+					break;
+				}
 			}
 		}
 
