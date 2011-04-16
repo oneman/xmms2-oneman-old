@@ -43,7 +43,7 @@ void list_print_playlists (xmmsc_result_t *res, cli_infos_t *infos, gboolean all
 void list_print_collections (xmmsc_result_t *res, cli_infos_t *infos);
 void list_jump (xmmsc_result_t *res, cli_infos_t *infos);
 void list_jump_back (xmmsc_result_t *res, cli_infos_t *infos);
-void position_jump (cli_infos_t *infos, playlist_positions_t *positions);
+void position_jump (cli_infos_t *infos, playlist_positions_t *positions, gboolean dotickle);
 void positions_remove (cli_infos_t *infos, const gchar *playlist, playlist_positions_t *positions);
 void positions_move (cli_infos_t *infos, const gchar *playlist, playlist_positions_t *positions, gint pos);
 void positions_print_info (cli_infos_t *infos, playlist_positions_t *positions);

@@ -670,7 +670,19 @@ xmms_output_filler (void *arg)
 				output->new_internal_filler_state = STOP;
 				continue;
 			}
-
+			
+			
+			//	if not enough frames in ringbuffer to satisfy needs of transition
+			//	we shoot off a filler for the current stream and then tickleseek
+			//	to the new area of the track
+			if ((output->filler_state == SEEK) && (TRUE)) {
+				xmms_output_filler_autopilot_engage(output, chain, output->filling_ringbuffer);
+				chain = NULL;
+				output->switchbuffer_seek = TRUE;
+				output->next_ringbuffer = (xmms_ringbuf_t *)xmms_output_get_next_ringbuffer(output, output->filling_ringbuffer);
+				output->new_internal_filler_state = RUNSEEK;
+				continue;
+			}
 			ret = xmms_xform_this_seek (chain, output->filler_seek, XMMS_XFORM_SEEK_SET, &err);
 			if (ret == -1) {
 				XMMS_DBG ("Seeking failed: %s", xmms_error_message_get (&err));
@@ -937,7 +949,6 @@ xmms_output_next_autopilot(xmms_output_t *output)
 				output->autopilot = &output->autopilots[z + 1];
 				XMMS_DBG ("Switched to autopilot %d", z + 1);
 			}
-			//xmms_ringbuf_set_eos(output->ringbuffers[z], FALSE);
 			break;
 		}
 		
@@ -962,7 +973,6 @@ xmms_output_next_xtransition(xmms_output_t *output)
 				output->xtransition_transition = &output->xtransitions[z + 1];
 				XMMS_DBG ("Switched to xtransition %d", z + 1);
 			}
-			//xmms_ringbuf_set_eos(output->ringbuffers[z], FALSE);
 			break;
 		}
 		
@@ -1243,6 +1253,9 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 		// read newest
 		ret = crossfade_slice(output->xtransition_transition, buffer, len);
 		
+		if (ret != len)
+			XMMS_DBG ("oh knows");
+		
 		//cull the old
 		int z;
 		output->xtransition_running = 0;
@@ -1392,14 +1405,10 @@ xmms_playback_client_seeksamples (xmms_output_t *output, gint32 samples, gint32 
 
 	}
 
-	//if (whence == XMMS_PLAYBACK_SEEK_TICKLE) {
-	if (FALSE) {
-		//xmms_output_filler_tickle_seek (output, samples);
-	
+	if (whence == XMMS_PLAYBACK_SEEK_TICKLE) {
+		xmms_output_filler_tickle_seek (output, samples);
 	} else {
-	
-		//xmms_output_filler_seek (output, samples);
-		
+		xmms_output_filler_seek (output, samples);
 	}
 
 }
@@ -1905,7 +1914,7 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 
 	output->status_mutex = g_mutex_new ();
 
-	prop = xmms_config_property_register ("output.buffersize", "32768", NULL, NULL);
+	prop = xmms_config_property_register ("output.buffersize", "32767", NULL, NULL);
 	size = xmms_config_property_get_int (prop);
 	XMMS_DBG ("Using buffersize %d", size);
 

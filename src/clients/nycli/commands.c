@@ -189,10 +189,11 @@ cli_jump_setup (command_action_t *action)
 {
 	const argument_t flags[] = {
 		{ "backward", 'b', 0, G_OPTION_ARG_NONE, NULL, _("Jump backward to the first media matching the pattern"), NULL },
+		{ "time",   't', 0, G_OPTION_ARG_INT, NULL, _("Also immediately seek to a absolute position."), NULL },
 		{ NULL }
 	};
 	command_action_fill (action, "jump", &cli_jump, COMMAND_REQ_CONNECTION | COMMAND_REQ_CACHE, flags,
-	                     _("[-b] <pattern|positions>"),
+	                     _("[-b] <pattern|positions> [-t <time> ]"),
 	                     _("Jump to the first media maching the pattern."));
 }
 
@@ -607,7 +608,7 @@ cli_seek (cli_infos_t *infos, command_context_t *ctx)
 	xmmsc_result_t *res;
 	command_arg_time_t t;
 
-	if (command_arg_time_get (ctx, 0, &t)) {
+	if (command_arg_time_get (ctx, 3, &t)) {
 		if (t.type == COMMAND_ARG_TIME_OFFSET) {
 			res = xmmsc_playback_seek_ms (infos->sync, t.value.offset * 1000, XMMS_PLAYBACK_SEEK_CUR);
 		} else {
@@ -678,17 +679,29 @@ cli_jump (cli_infos_t *infos, command_context_t *ctx)
 {
 	xmmsc_result_t *res;
 	xmmsc_coll_t *query;
-	gboolean backward = TRUE, retval = TRUE;
+	command_arg_time_t t;
+	gboolean backward = TRUE, retval = TRUE, tickle = TRUE;
 	playlist_positions_t *positions;
 
 	if (!command_flag_boolean_get (ctx, "backward", &backward)) {
 		backward = FALSE;
 	}
 
+	if (command_arg_time_get (ctx, 0, &t)) {
+		tickle = FALSE;	
+	}
+
 	/* Select by positions */
-	if (command_arg_positions_get (ctx, 0, &positions, infos->cache->currpos)) {
-		position_jump (infos, positions);
+	if (command_arg_positions_get (ctx, 1, &positions, infos->cache->currpos)) {
+		position_jump (infos, positions, tickle);
 		playlist_positions_free (positions);
+
+		if (tickle == FALSE) {
+			res = xmmsc_playback_seek_ms (infos->sync, t.value.pos * 1000, XMMS_PLAYBACK_SEEK_TICKLE);
+			xmmsc_result_wait (res);
+			done (res, infos);	
+		}
+
 
 	/* Select by pattern */
 	} else if (command_arg_pattern_get (ctx, 0, &query, TRUE)) {

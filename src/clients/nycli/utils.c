@@ -1166,7 +1166,7 @@ list_jump (xmmsc_result_t *res, cli_infos_t *infos)
 }
 
 void
-position_jump (cli_infos_t *infos, playlist_positions_t *positions)
+position_jump (cli_infos_t *infos, playlist_positions_t *positions, gboolean dotickle)
 {
 	xmmsc_result_t *jumpres;
 	int pos;
@@ -1174,7 +1174,9 @@ position_jump (cli_infos_t *infos, playlist_positions_t *positions)
 	if (playlist_positions_get_single (positions, &pos)) {
 		jumpres = xmmsc_playlist_set_next (infos->sync, pos);
 		xmmsc_result_wait (jumpres);
-		tickle (jumpres, infos);
+		if (dotickle == TRUE) {
+			tickle (jumpres, infos);
+		}
 	} else {
 		g_printf (_("Cannot jump to several positions!\n"));
 	}
