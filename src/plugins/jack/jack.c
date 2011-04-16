@@ -314,10 +314,12 @@ xmms_jack_process (jack_nframes_t frames, void *arg)
 			res = xmms_output_read (output, (gchar *)tbuf, t);
 
 			if (res <= 0) {
+				XMMS_DBG ("Nothing Read.. but promised %d (Could be a ringbuf hotspot...) res: %d", avail, res);
 				break;
 			}
 
 			if (res < t) {
+				XMMS_DBG ("Less read than promised! (Could be a ringbuf hotspot...) wanted: %d res: %d", t, res);
 				break;
 			}
 

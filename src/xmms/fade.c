@@ -475,30 +475,32 @@ int crossfade_slice(xmms_xtransition_t *transition, void *buffer, int len) {
 		ret = xmms_ringbuf_read (transition->inring, buffer, clen);
 		//XMMS_DBG ("got new %d " , ret);
 		
-		if (clen < len)
-			xmms_ringbuf_read (transition->inring, buffer + clen, len - clen);
-		
 		//XMMS_DBG ("crossfading %d " , transition->current_frame_number + (len / xmms_sample_frame_size_get(transition->format)));
 
 		if (xmms_stream_type_get_int(transition->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S16)
 		{
-			ret = crossfade_slice_s16(transition, &oldbuffer, buffer, buffer, len);
+			ret = crossfade_slice_s16(transition, &oldbuffer, buffer, buffer, clen);
 		}
 				
 		if (xmms_stream_type_get_int(transition->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_S32)
 		{
-			ret = crossfade_slice_s32(transition, &oldbuffer, buffer, buffer, len);
+			ret = crossfade_slice_s32(transition, &oldbuffer, buffer, buffer, clen);
 		}
 				
 		if (xmms_stream_type_get_int(transition->format, XMMS_STREAM_TYPE_FMT_FORMAT) == XMMS_SAMPLE_FORMAT_FLOAT)
 		{
-			ret = crossfade_slice_float(transition, &oldbuffer, buffer, buffer, len);			
+			ret = crossfade_slice_float(transition, &oldbuffer, buffer, buffer, clen);			
 		}
 
 
 		transition->current_frame_number = transition->current_frame_number + (len / xmms_sample_frame_size_get(transition->format));
 
 		/* Finish Transition */
+
+		if (clen < len) {
+			//XMMS_DBG ("extra %d", len - clen);
+			xmms_ringbuf_read (transition->inring, buffer + clen, len - clen);
+		}
 
 		if (transition->current_frame_number >= transition->total_frames) {
 		// kill the old
