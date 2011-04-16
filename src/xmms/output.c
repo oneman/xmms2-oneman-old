@@ -483,6 +483,9 @@ xmms_output_filler_autopilot (void *arg, void *arg2)
 	XMMS_DBG ("Autopilot Took Off");
 
 	while (TRUE) {
+		if (xmms_ringbuf_bytes_free(autopilot->ringbuf) < autopilot->output->slice) {
+			xmms_ringbuf_wait_free (autopilot->ringbuf, autopilot->output->slice, amutex);
+		}
 		xmms_ringbuf_get_write_vector(autopilot->ringbuf, &write_vector[0]);
 		len = MIN(autopilot->output->slice, write_vector[0].len);
 		ret = xmms_xform_this_read (autopilot->chain, write_vector[0].buf, len, &err);
@@ -490,9 +493,6 @@ xmms_output_filler_autopilot (void *arg, void *arg2)
 			break;
 		}
 		xmms_ringbuf_write_advance(autopilot->ringbuf, ret);
-		if (xmms_ringbuf_bytes_free(autopilot->ringbuf) < autopilot->output->slice) {
-			xmms_ringbuf_wait_free (autopilot->ringbuf, autopilot->output->slice, amutex);
-		}
 	}
 
 	XMMS_DBG ("Autopilot Landed");

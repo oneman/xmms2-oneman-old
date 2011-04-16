@@ -741,7 +741,7 @@ crossfade_slice_s16(xmms_xtransition_t *transition, void *sample_buffer_from, vo
 
 		}
 
-			faded_samples[i*number_of_channels + j] = ((((samples_from[transition->current_frame_number + i*number_of_channels + j] * current_fade_amount[0][j]) ) + ((samples_to[i*number_of_channels + j] * current_fade_amount[1][j]) )) );
+			faded_samples[i*number_of_channels + j] = ((((samples_from[i*number_of_channels + j] * current_fade_amount[0][j]) ) + ((samples_to[i*number_of_channels + j] * current_fade_amount[1][j]) )) );
 
 			lastsign[0][j] = sign[0][j];
 			lastsign[1][j] = sign[1][j];
@@ -855,7 +855,7 @@ crossfade_slice_s32(xmms_xtransition_t *transition, void *sample_buffer_from, vo
 
 		}
 
-			faded_samples[i*number_of_channels + j] = ((((samples_from[transition->current_frame_number + i*number_of_channels + j] * current_fade_amount[0][j]) ) + ((samples_to[i*number_of_channels + j] * current_fade_amount[1][j]) )) );
+			faded_samples[i*number_of_channels + j] = ((((samples_from[i*number_of_channels + j] * current_fade_amount[0][j]) ) + ((samples_to[i*number_of_channels + j] * current_fade_amount[1][j]) )) );
 
 			lastsign[0][j] = sign[0][j];
 			lastsign[1][j] = sign[1][j];
