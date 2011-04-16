@@ -186,17 +186,26 @@ gint xmms_ringbuf_get_next_hotspot_pos (xmms_ringbuf_t *ringbuf) {
 void xmms_ringbuf_hit_hotspot (xmms_ringbuf_t *ringbuf) {
 
 	gboolean ok;
+			
+	if (!g_queue_is_empty (ringbuf->hotspots)) {		
 
 		xmms_ringbuf_hotspot_t *hs = g_queue_peek_head (ringbuf->hotspots);
 		(void) g_queue_pop_head (ringbuf->hotspots);
 		ok = hs->callback (hs->arg);
+
 		if (hs->destroy)
 			hs->destroy (hs->arg);
+
 		g_free (hs);
 
 		if (!ok) {
 			//return 0;
 		}
+		
+	} else {
+		XMMS_DBG ("No hitable hotspot");
+	}
+		
 }
 
 gint

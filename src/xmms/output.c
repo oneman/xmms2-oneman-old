@@ -136,64 +136,80 @@ XMMS_CMD_DEFINE (volume_get, xmms_playback_client_volume_get, xmms_output_t *, D
 struct xmms_output_St {
 	xmms_object_t object;
 
+	/* transition plugin private data to be moved out soon */
 	xmms_fader_t fader;
-	xmms_playback_transition_t playback_transition;
-	xmms_ringbuf_t *playback_messages;
+	xmms_roll_data_t *rolldata;
 	xmms_transition_state_t playback_transition_state;
 	
-	xmms_roll_data_t *rolldata;
-	
-	gfloat j;
-	gint max;
-	int zero_frames;
-	int zero_frames_count;
-	
-	gint new_xtransition;
-	
+	/*  the current single source transition and the latest dual source transition
+		needs to be renamed etc */
+	xmms_playback_transition_t playback_transition;
 	xmms_xtransition_t *xtransition_transition;
 	
+	/* Number of output frames for output 'plunger' config option? */
+	gint zero_frames;
+	gint zero_frames_count;
+	
+	/* linked max resources, num ringbuffers, transitions at one time.. */
+	gint max;
+	gint num_xtransitions;
+	gint num_autopilots;
+	gint num_ringbuffers;
+
+	/* if a transition or xtransition is running.. rename .. deprecate.. */	
 	gboolean transition;
 	gint xtransition;
+	
+	/* bad way of informaing of a new xtransition */
+	gint new_xtransition;
+	
+	/* should be a local var.. */
 	gint xtransition_running;
-	gint num_xtransitions;
+
 	xmms_xtransition_t xtransitions[128];
-		
 	xmms_output_filler_autopilot_t autopilots[128];
-	gint num_autopilots;
 	xmms_output_filler_autopilot_t *autopilot;
 	GThreadPool *autopilot_threads;
 
-	xmms_output_plugin_t *plugin;
-	gpointer plugin_data;
-
-	gint played;
-	gint played_time;
-	
-	xmms_medialib_entry_t current_entry;
-	guint toskip;
-
+	xmms_ringbuf_t *playback_messages;
 	xmms_ringbuf_t *filler_messages;
-	gboolean tickled_when_paused;
-	gint slice;
 
 	GThread *filler_thread;
 	GMutex *filler_mutex;
 	GMutex *read_mutex;
 
-	xmms_output_filler_state_t filler_state;
-	xmms_output_filler_state_t new_internal_filler_state;
-
 	xmms_ringbuf_t *filling_ringbuffer;
 	xmms_ringbuf_t *reading_ringbuffer;
 	xmms_ringbuf_t *ringbuffers[128];
-	gint num_ringbuffers;
+	/* dont think we need to use a next ringbuffer anymore... */
 	xmms_ringbuf_t *next_ringbuffer;
+
+	gint played;
+	gint played_time;
+	xmms_medialib_entry_t current_entry;
 	
+	
+	/* seeking related things */
 	gboolean switchbuffer_seek;
 	gint switchcount;
-
+	
+	guint toskip;
 	guint32 filler_seek;
 	gint filler_skip;
+
+	/* Filler state */	
+	xmms_output_filler_state_t filler_state;
+	xmms_output_filler_state_t new_internal_filler_state;
+
+	/* look into this one... */
+	gboolean tickled_when_paused;
+
+	/* Pretty much 4096 or bust */
+	gint slice;
+
+	/* Output Plugin and its data */
+	xmms_output_plugin_t *plugin;
+	gpointer plugin_data;
 
 	/** Internal status, tells which state the
 	    output really is in */
@@ -545,9 +561,7 @@ xmms_output_filler_wait_for_message_or_space(xmms_output_t *output) {
 	int free_bytes;
 
 	while(TRUE) {
-
 		ret = xmms_ringbuf_timed_wait_used(output->filler_messages, 4, output->filler_mutex, 30);
-
 		if (ret == TRUE) {
 		
 			ret = xmms_ringbuf_read(output->filler_messages, buf, 4);
@@ -804,7 +818,6 @@ xmms_output_filler (void *arg)
 			output->new_internal_filler_state = SEEKNOCLEAR;
 			continue;
 		}
-
 
 		/* Running State and we have a chain */
 
@@ -1088,6 +1101,7 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 	
 	int resetstatetemp;
 
+	ret = 0;
 	
 	message = xmms_playback_status_check_for_message(output);
 	
@@ -1122,7 +1136,6 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 			
 		}
 		
-		
 		if (resetstatetemp == TRUE) {
 			if ((output->fader.current_frame_number > output->fader.total_frames) || (output->fader.current_frame_number == 0)){
 				output->fader.current_frame_number = 0;
@@ -1140,77 +1153,23 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 		
 	}
 	
-	
 	if (output->zero_frames_count > 0) {
 		return xmms_output_zero (output, buffer, len);
 	}
-
-				
+	
+	
+	if (output->format == NULL) {
+		xmms_output_hit_hotspot(output);
+	}
+	
 	if (output->fader.status) {
-
-
-		
-		if (output->fader.current_frame_number == 0) {
-			src_reset (output->rolldata->resampler);
-		}
-
-		if (output->j == 0.0) { 
-			
-			if (output->fader.status == FADING_OUT) { 
-				output->j = 100.0;
-			} else {
-				output->j = 85.0;
-			}		
-			
-			output->rolldata->resdata.src_ratio = 100.0 / output->j ;
-		}
-		
-		int x;
-		ret = 0;
-		int ret2;
-		ret2 = 0;
-		if(output->fader.current_frame_number <= (output->fader.total_frames - 1524)) {
-		while (ret != len )
-			ret += xmms_roll_read (output->rolldata, output->reading_ringbuffer, buffer + ret, len - ret, 0);			
-		} else {
-
-			output->rolldata->resdata.src_ratio = 1;
-
-			ret2 = xmms_roll_read (output->rolldata, output->reading_ringbuffer, buffer + ret, len - ret, 1);
-			XMMS_DBG ("ret2 %d", ret2 );
-			ret = ret + ret2;
-
-			x = -1;
-			XMMS_DBG ("hel me");
-			x = find_final_zero_crossing (buffer, ret);
-			if (x != -1) {
-				ret = x * 8; 
-			}
-			
-
-			if (ret < len) {
-				XMMS_DBG ("needed %d more", len - ret );
-				ret += xmms_ringbuf_read (output->reading_ringbuffer, buffer + ret, len - ret);
-			}
-
-		}
-			
-		if (output->fader.status == FADING_OUT) { 
-			output->j = output->j - 0.8;
-			output->rolldata->resdata.src_ratio = 100.0 / output->j;
-		} else {
-			output->j = output->j + 0.15;
-			output->rolldata->resdata.src_ratio = 100.0 / output->j;				
-		}	
-			
+	
+		ret = xmms_ringbuf_read (output->reading_ringbuffer, buffer, len);
 		output->fader.format = output->format;
 		fade_slice(&output->fader, buffer, ret);
 		
 		if (output->fader.current_frame_number >= output->fader.total_frames) {
-		
-			output->j = 0;
-		
-			if ((output->zero_frames) && (output->fader.status == FADING_OUT)){
+			if ((output->zero_frames) && (output->fader.status == FADING_OUT)) {
 				output->zero_frames_count = output->zero_frames;
 			} else {
 				fade_complete(output);
@@ -1219,22 +1178,13 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 	}
 	
 	if (output->xtransition) {		
-	  // if any cross transitions at all
-	
-
-		//if new ones
+		/* Set Up New Dual Source Transitions */
 		if (output->xtransition_running < output->xtransition) {
-		// limit of just one new one per loop!??!
 			while (output->xtransition_running != output->xtransition) {
-			// move the current xtranstion to the next number
-			// is it possible to get more than one by accident?
+				// move the current xtranstion to the next number
 				xmms_output_next_xtransition(output);
-		
-				XMMS_DBG ("New transition oh yea!");
-		
 				output->xtransition_transition->format = output->format;
-				
-				// if more than one transitions going, tell the new one to read the old one
+				/* if more than one transitions going, tell the new one to read the old one */
 				if (output->xtransition_running > 0) {
 					output->xtransition_transition->readlast = true;
 					output->xtransition_transition->last = xmms_output_get_prev_xtransition(output, output->xtransition_transition);				
@@ -1244,19 +1194,15 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 				output->reading_ringbuffer = xmms_output_get_next_ringbuffer(output, output->reading_ringbuffer);
 				output->xtransition_transition->outring = xmms_output_get_prev_ringbuffer(output, output->reading_ringbuffer);
 				output->xtransition_transition->inring = output->reading_ringbuffer;
-			
 				output->xtransition_running = output->xtransition_running + 1;
 			}
 		}
-	
-
-		// read newest
+		/* Run the newest dual source transition, which will recurse as needed */
 		ret = crossfade_slice(output->xtransition_transition, buffer, len);
 		
 		if (ret != len)
 			XMMS_DBG ("oh knows");
 		
-		//cull the old
 		int z;
 		output->xtransition_running = 0;
 		for (z = 0; z < output->num_xtransitions; z++) {
@@ -1264,7 +1210,6 @@ xmms_transition_read (xmms_output_t *output, char *buffer, gint len)
 				output->xtransition_running++;
 			}
 		}
-		
 		g_atomic_int_set(&output->xtransition, output->xtransition_running);
 
 	}
@@ -1285,7 +1230,6 @@ xmms_output_read (xmms_output_t *output, char *buffer, gint len)
 	g_return_val_if_fail (buffer, -1);
 
 	/* Handle no transition buffer swap here? */
-
 	if ((output->transition) || (output->xtransition) || (output->new_xtransition)) {
 		
 		if (output->new_xtransition > 0) {
@@ -1320,7 +1264,6 @@ xmms_output_read_wait (xmms_output_t *output, char *buffer, gint len)
 guint
 xmms_output_bytes_available (xmms_output_t *output)
 {
-
 	if (output->filling_ringbuffer != output->reading_ringbuffer) {
 		return xmms_ringbuf_bytes_used(output->reading_ringbuffer) + xmms_ringbuf_bytes_used(output->filling_ringbuffer);
 	}
@@ -1936,8 +1879,6 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 	output->xtransition = 0;
 	output->xtransition_running = 0;
 	output->zero_frames = 56000;
-	
-	output->j = 0;	
 
 	output->zero_frames_count = 0;
 

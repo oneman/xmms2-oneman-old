@@ -1,4 +1,118 @@
 
+
+
+
+
+
+/*
+
+
+roll this and smoke it..
+
+		if (output->fader.current_frame_number == 0) {
+			src_reset (output->rolldata->resampler);
+		}
+
+		if (output->j == 0.0) { 
+			
+			if (output->fader.status == FADING_OUT) { 
+				output->j = 100.0;
+			} else {
+				output->j = 85.0;
+			}		
+			
+			output->rolldata->resdata.src_ratio = 100.0 / output->j ;
+		}
+		
+		int x;
+		ret = 0;
+		int ret2;
+		ret2 = 0;
+		if(output->fader.current_frame_number <= (output->fader.total_frames - 1524)) {
+		while (ret != len )
+			ret += xmms_roll_read (output->rolldata, output->reading_ringbuffer, buffer + ret, len - ret, 0);			
+		} else {
+
+			output->rolldata->resdata.src_ratio = 1;
+
+			ret2 = xmms_roll_read (output->rolldata, output->reading_ringbuffer, buffer + ret, len - ret, 1);
+			XMMS_DBG ("ret2 %d", ret2 );
+			ret = ret + ret2;
+
+			x = -1;
+			XMMS_DBG ("hel me");
+			x = find_final_zero_crossing (buffer, ret);
+			if (x != -1) {
+				ret = x * 8; 
+			}
+			
+
+			if (ret < len) {
+				XMMS_DBG ("needed %d more", len - ret );
+				ret += xmms_ringbuf_read (output->reading_ringbuffer, buffer + ret, len - ret);
+			}
+
+		}
+			
+		if (output->fader.status == FADING_OUT) { 
+			output->j = output->j - 0.8;
+			output->rolldata->resdata.src_ratio = 100.0 / output->j;
+		} else {
+			output->j = output->j + 0.15;
+			output->rolldata->resdata.src_ratio = 100.0 / output->j;				
+		}
+		
+		
+		
+*/
+
+
+
+
+/*
+
+
+
+
+
+	if (output->fader.status) {	
+			
+		output->fader.format = output->format;
+		fade_slice(&output->fader, buffer, ret);
+		
+		if (output->fader.current_frame_number >= output->fader.total_frames) {
+		
+			output->j = 0;
+		
+			if ((output->zero_frames) && (output->fader.status == FADING_OUT)) {
+				output->zero_frames_count = output->zero_frames;
+			} else {
+				fade_complete(output);
+			}
+		}
+	}
+	
+	
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #include <math.h>
 #include "xmms/xmms_log.h"
 #include "xmmspriv/xmms_sample.h"
