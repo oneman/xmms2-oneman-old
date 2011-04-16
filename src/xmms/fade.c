@@ -423,7 +423,7 @@ int crossfade_slice(xmms_xtransition_t *transition, void *buffer, int len) {
 			transition->current_frame_number = 0;
 			//transition->total_frames = bytes / xmms_sample_frame_size_get(transition->format);
 
-			transition->total_frames = 96000;
+			transition->total_frames = 40000;
 
 
 			transition->setup = TRUE;

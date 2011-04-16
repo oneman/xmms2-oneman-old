@@ -1851,7 +1851,7 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 
 	output = xmms_object_new (xmms_output_t, xmms_output_destroy);
 
-	output->max = 50;	
+	output->max = 15;	
 
 	output->playlist = playlist;
 
