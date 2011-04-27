@@ -610,9 +610,11 @@ xmms_flac_seek (xmms_xform_t *xform, gint64 samples,
 		return -1;
 	}
 
+	g_string_erase (data->buffer, 0, data->buffer->len);
+
 	res = FLAC__stream_decoder_seek_absolute (data->flacdecoder,
 	                                          (FLAC__uint64) samples);
-
+XMMS_DBG ("SEEK RES IS  %d", res );
 	return res ? samples : -1;
 }
 

@@ -669,17 +669,24 @@ xmms_output_filler (void *arg)
 		if((output->has_seeked == TRUE) && (output->go_for_rev > 0)) {
 				gint samples;
 				if (output->has_seeked_samples == 0) {
-					output->has_seeked_samples = g_atomic_int_get(&output->played) / xmms_sample_frame_size_get (output->format);
+					//output->has_seeked_samples = g_atomic_int_get(&output->played) - (g_atomic_int_get(&output->played) % 2) / xmms_sample_frame_size_get (output->format);
+					output->has_seeked_samples = 8192 * 512;
 				}
 				
-				output->has_seeked_samples = output->has_seeked_samples - output->go_for_rev;
+				//output->has_seeked_samples = output->has_seeked_samples - output->go_for_rev;
+				
+				
+				
 				ret = xmms_xform_this_seek (chain, output->has_seeked_samples, XMMS_XFORM_SEEK_SET, &err);
 				if (ret == -1) {
 					XMMS_DBG ("Seeking failed: %s", xmms_error_message_get (&err));
 				} else {
-					XMMS_DBG ("Seek ok! %d", ret);
+					XMMS_DBG ("Seek ok! %d %d", output->has_seeked_samples, ret);
 
-				output->filler_skip = output->has_seeked_samples - ret;
+output->has_seeked_samples = output->has_seeked_samples - output->go_for_rev;
+
+
+				output->filler_skip = 0;
 				if (output->filler_skip < 0) {
 					XMMS_DBG ("Seeked %d samples too far! Updating position...",
 					          -output->filler_skip);
@@ -693,16 +700,19 @@ xmms_output_filler (void *arg)
 			//update_playtime (output, 0);
 					output->toskip = output->filler_skip * xmms_sample_frame_size_get (output->format);
 		}
+						if(output->has_seeked == TRUE) {
+		//ret = xmms_xform_this_read (chain, buf, sizeof (buf), &err);
+		}
+				ret = xmms_xform_this_read (chain, buf, sizeof (buf), &err);
 		
-		ret = xmms_xform_this_read (chain, buf, sizeof (buf), &err);
 		if (ret > 0) {
 			int wrote;
 			wrote = 0;
 
 			gint skip = MIN (ret, output->toskip);
-			if (skip > 0) {
+			//if (skip > 0) {
 				XMMS_DBG ("Skip Num Bytes from seek was: %d %d", skip,  output->toskip);
-			}
+			//}
 			
 			output->toskip -= skip;
 				
@@ -711,20 +721,26 @@ xmms_output_filler (void *arg)
 					xmms_ringbuf_wait_free (output->filler_buffer, ret - skip, output->filler_mutex);
 			
 				if(output->switchbuffer_seek == TRUE) {
+				XMMS_DBG ("sfdfs"); 
 					wrote = xmms_ringbuf_write_reverse (output->inactive_filler_buffer, buf + skip, ret - skip);
 				} else {
-
+						if(output->has_seeked == TRUE) {
 					wrote = xmms_ringbuf_write_reverse (output->filler_buffer, buf + skip, ret - skip);
+					} else {
+						wrote = xmms_ringbuf_write (output->filler_buffer, buf + skip, ret - skip);
+					
+					}
 				}
 
 			
-				while (wrote < (ret - skip)) {
+		/*		while (wrote < (ret - skip)) {
 					xmms_output_filler_wait_for_message_or_space(output);
 					if (output->filler_state != RUN) {
 						break;
 					}
 					wrote += xmms_ringbuf_write_reverse (output->filler_buffer, buf + skip + wrote, ret - skip - wrote);
 				}
+			*/
 				if (output->filler_state != RUN) {
 					XMMS_DBG ("State changed while waiting... %d", output->filler_state );
 					continue;
@@ -1026,7 +1042,7 @@ xmms_playback_client_seeksamples (xmms_output_t *output, gint32 samples, gint32 
 
 	}
 
-	xmms_output_filler_seek (output, samples);
+	xmms_output_filler_seek (output, 8192 * 512);
 
 }
 
@@ -1366,7 +1382,7 @@ xmms_output_new (xmms_output_plugin_t *plugin, xmms_playlist_t *playlist)
 
 	output->filler_messages = xmms_ringbuf_new (128);
 
-	output->go_for_rev = 1;
+	output->go_for_rev = 0;
 
 	output->read_mutex = g_mutex_new ();
 	g_mutex_lock (output->read_mutex); /* because it has to be locked or unlocked to be freed */
